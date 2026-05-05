@@ -98,7 +98,8 @@ Write a comment body without a suggestion when the fix requires understanding co
 ## What not to flag
 
 Avoid noise. Do not raise a concern for:
-- Code in non-DAG files (tests, scripts, CI config) unless it directly affects DAG behavior.
+- Code in non-DAG files (tests, scripts, CI config) *unless it directly affects DAG behavior*.
+- Any code in `**/.astro`; this is scaffolding for the Astro project.
 - Stylistic preferences with no functional consequence (snake_case vs camelCase on non-public symbols, docstring formatting).
 - Versions of providers or libraries that post-date your training cutoff — you cannot verify whether a version is current or not, so don't speculate.
 - Patterns that are idiomatic in the project but diverge from general Python style — match the project's existing conventions.
@@ -111,6 +112,7 @@ Avoid noise. Do not raise a concern for:
 
 ```python
 from airflow.sdk import DAG, task
+
 import pandas as pd
 
 with DAG(
@@ -146,6 +148,7 @@ Expected comments:
 
 ```python
 from airflow.sdk import DAG, task, Variable
+
 import pandas as pd
 
 with DAG(
