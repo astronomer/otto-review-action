@@ -24,6 +24,7 @@ with DAG(
     schedule_interval=None,
 ):
 
+    @task
     def extract(file_path):
         return pd.read_csv(file_path)
 
