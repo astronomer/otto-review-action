@@ -1,19 +1,10 @@
 name: E2E - Otto Review
 
-# Run the action against the PR's own diff. The path filter limits the
-# workflow to PRs that touch either the e2e fixture or the action source —
-# editing one or the other is the trigger for "I want to see what Otto says
-# about this change". `workflow_dispatch` is included so a maintainer can
-# kick a run off manually against an arbitrary PR.
 on:
   pull_request:
     branches: [main]
     paths:
       - 'e2e/**'
-      - 'action.yaml'
-      - 'scripts/**'
-      - 'system-prompt.md'
-      - 'verdict-schema.json'
       - '.github/workflows/e2e-otto-review.yaml'
   workflow_dispatch:
 
