@@ -54,10 +54,7 @@ verdict=$(jq -r '.verdict // "comment"' <<<"$verdict_json")
 summary=$(jq -r '.summary // ""' <<<"$verdict_json")
 reasoning=$(jq -r '.reasoning // ""' <<<"$verdict_json")
 
-# Build inline comments. Drop entries that don't anchor to a file in the diff
-# or that lack a line number — GitHub rejects the whole review if any inline
-# comment can't be placed. multi-line comments use start_line/line; single-line
-# comments use only line.
+# Validate changed files.
 mapfile -t changed_files < <(git diff --name-only "$BASE_SHA".."$HEAD_SHA")
 if [[ ${#changed_files[@]} -eq 0 ]]; then
   echo "::error::No changed files between $BASE_SHA..$HEAD_SHA. Refusing to post a review."
@@ -65,10 +62,18 @@ if [[ ${#changed_files[@]} -eq 0 ]]; then
 fi
 changed_csv=$(printf '%s\n' "${changed_files[@]}" | jq -R . | jq -sc .)
 
-# Inline comments. When `suggestion` is set, append a fenced ```suggestion
-# block so reviewers can apply it as a commit. Multi-line suggestions need
-# `start_line` AND `line`; GitHub uses start_line as the first line of the
-# range and line as the last (and start_line < line).
+# Filter comments to only those whose line numbers fall within actual diff
+# hunks. GitHub's inline comment API returns 422 "Line could not be resolved"
+# when a comment references a line that isn't part of any hunk — even if the
+# line exists in the file. filter-comments.py parses the diff and drops any
+# comment that can't be anchored.
+verdict_json="$(python3 "$ACTION_PATH/scripts/filter-comments.py" \
+  /tmp/otto-review/diff.capped.patch \
+  <<<"$verdict_json")"
+
+# Build the inline comment payloads. When `suggestion` is set, append a fenced
+# ```suggestion block so reviewers can apply it as a one-click commit.
+# Multi-line ranges need start_line < line; single-line comments omit start_line.
 inline_comments=$(jq -c --argjson changed "$changed_csv" '
   [(.comments // [])[]
     | select(.file != null and .file != "" and .line != null and (.file | IN($changed[])))
