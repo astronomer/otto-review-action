@@ -1,0 +1,46 @@
+name: E2E - Otto Review
+
+# Run the action against the PR's own diff. The path filter limits the
+# workflow to PRs that touch either the e2e fixture or the action source —
+# editing one or the other is the trigger for "I want to see what Otto says
+# about this change". `workflow_dispatch` is included so a maintainer can
+# kick a run off manually against an arbitrary PR.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'e2e/**'
+      - 'action.yaml'
+      - 'scripts/**'
+      - 'system-prompt.md'
+      - 'verdict-schema.json'
+      - '.github/workflows/e2e-otto-review.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-otto-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  ASTRO_API_TOKEN: ${{ secrets.ASTRO_API_TOKEN }}
+  ASTRO_ORGANIZATION: ${{ secrets.ASTRO_ORGANIZATION }}
+
+jobs:
+  review:
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+        github.event.pull_request.draft == false &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Otto Review
+        uses: ./
+        with:
+          dry-run: "true"
