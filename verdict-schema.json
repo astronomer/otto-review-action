@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "required": ["verdict", "summary", "reasoning", "comments"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "comment", "request_changes"],
+      "description": "Overall verdict on the PR. 'approve' = no concerns. 'comment' = non-blocking notes. 'request_changes' = something must be fixed before merge."
+    },
+    "summary": {
+      "type": "string",
+      "description": "One short sentence describing what the PR does."
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "1-3 sentences explaining the verdict at the whole-PR level."
+    },
+    "comments": {
+      "type": "array",
+      "description": "Line-anchored review comments. Each comment must point at a specific line in a file in the diff. Optional 'suggestion' replaces the line(s) when the reviewer can offer a concrete fix.",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "body"],
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Path to the file, relative to the repo root."
+          },
+          "line": {
+            "type": "integer",
+            "description": "Last line of the range the comment refers to (1-indexed, in the new file)."
+          },
+          "start_line": {
+            "type": "integer",
+            "description": "First line of a multi-line comment range. Omit for a single-line comment."
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment body. Be direct; explain what is wrong and why."
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "Optional replacement text for the lines covered by 'start_line'..'line'. Rendered as a GitHub commit suggestion. Omit when no concrete fix is being proposed."
+          }
+        }
+      }
+    }
+  }
+}

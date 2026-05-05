@@ -1,0 +1,193 @@
+name: "Otto Review"
+description: "Use Astronomer's Otto data engineering agent to review pull requests."
+author: "Astronomer"
+branding:
+  icon: "git-pull-request"
+  color: "purple"
+inputs:
+  astro-api-token:
+    required: false
+    default: ""
+    description: "Astronomer API token used to authenticate Otto against the Astronomer Gateway. If empty, the action falls back to the ASTRO_API_TOKEN env var."
+  astro-domain:
+    required: false
+    default: "astronomer.io"
+    description: "Astronomer domain. Defaults to 'astronomer.io'. Override for non-prod environments (e.g. 'astronomer-dev.io')."
+  astro-organization:
+    required: false
+    default: ""
+    description: "Astronomer organization ID for gateway routing. If empty, the action falls back to the ASTRO_ORGANIZATION env var."
+  github-token:
+    required: false
+    default: ${{ github.token }}
+    description: "GitHub token used to read PR metadata and post the review. Defaults to the workflow's GITHUB_TOKEN."
+  astro-cli-version:
+    required: false
+    default: ""
+    description: "Astro CLI version to install. Otto is bundled with the Astro CLI starting at 1.42.0. Empty installs the latest published version."
+  model:
+    required: false
+    default: ""
+    description: "Model identifier passed to Otto via --model. Empty uses Otto's default."
+  max-diff-lines:
+    required: false
+    default: "50000"
+    description: "Maximum number of diff lines passed to Otto. Larger diffs are truncated. Truncation is itself a signal that the PR is too large for an automated review."
+  allowed-tools:
+    required: false
+    default: "read,grep,find,ls,bash"
+    description: "Comma-separated list of Otto tools the reviewer may call. The default is read-only plus bash (for invoking skill helpers). Set to '' to allow Otto's full default tool set."
+  dry-run:
+    required: false
+    default: "false"
+    description: "If 'true', the review event is downgraded to COMMENT regardless of Otto's verdict. Use this while you're tuning the prompt."
+outputs:
+  verdict:
+    description: "Otto's verdict ('approve', 'comment', or 'request_changes'). Empty when Otto failed to produce a parseable response."
+    value: ${{ steps.post-review.outputs.verdict }}
+  summary:
+    description: "Otto's one-sentence summary of the PR."
+    value: ${{ steps.post-review.outputs.summary }}
+  comment-count:
+    description: "Number of inline review comments Otto produced."
+    value: ${{ steps.post-review.outputs.comment-count }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate workflow event
+      shell: bash
+      run: |
+        # The action only runs on pull_request / pull_request_target events. The
+        # PR number, base SHA, and head SHA all come from the event payload, and
+        # we'd rather fail loud than post a review against the wrong commits.
+        case "$GITHUB_EVENT_NAME" in
+          pull_request|pull_request_target) ;;
+          *)
+            echo "::error::otto-review-action only supports 'pull_request' and 'pull_request_target' events. Got: $GITHUB_EVENT_NAME"
+            exit 1
+            ;;
+        esac
+
+    - name: Checkout PR head
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        # Full history so `git diff base..head` works locally without an extra
+        # fetch. PRs from forks are checked out by SHA; the workflow's
+        # permissions decide whether secrets are available, not this step.
+        fetch-depth: 0
+        token: ${{ inputs.github-token }}
+
+    - name: Resolve auth inputs
+      id: auth
+      shell: bash
+      env:
+        INPUT_ASTRO_API_TOKEN: ${{ inputs.astro-api-token }}
+        INPUT_ASTRO_DOMAIN: ${{ inputs.astro-domain }}
+        INPUT_ASTRO_ORGANIZATION: ${{ inputs.astro-organization }}
+      run: |
+        # Otto reads ASTRO_TOKEN / ASTRO_DOMAIN / ASTRO_ORGANIZATION from env.
+        # Accept either the action input or a pre-set env var so the simple
+        # `env: { ASTRO_API_TOKEN: ... }` workflow form keeps working.
+        TOKEN="${INPUT_ASTRO_API_TOKEN:-${ASTRO_API_TOKEN:-}}"
+        DOMAIN="${INPUT_ASTRO_DOMAIN:-${ASTRO_DOMAIN:-astronomer.io}}"
+        ORG="${INPUT_ASTRO_ORGANIZATION:-${ASTRO_ORGANIZATION:-}}"
+
+        if [[ -z "$TOKEN" ]]; then
+          echo "::error::No Astronomer API token. Set the ASTRO_API_TOKEN env var or the 'astro-api-token' input."
+          exit 1
+        fi
+        if [[ -z "$ORG" ]]; then
+          echo "::error::No Astronomer organization. Set the ASTRO_ORGANIZATION env var or the 'astro-organization' input."
+          exit 1
+        fi
+
+        # Mask the token even if the user passed it via input. GITHUB_TOKEN-style
+        # secrets are masked automatically; user inputs are not.
+        echo "::add-mask::$TOKEN"
+
+        # Echo into GITHUB_ENV so subsequent steps inherit them, and into the
+        # step output for traceability (domain/org are not secret).
+        {
+          echo "ASTRO_TOKEN=$TOKEN"
+          echo "ASTRO_DOMAIN=$DOMAIN"
+          echo "ASTRO_ORGANIZATION=$ORG"
+        } >> "$GITHUB_ENV"
+        echo "domain=$DOMAIN" >> "$GITHUB_OUTPUT"
+        echo "organization=$ORG" >> "$GITHUB_OUTPUT"
+
+    - name: Install Astro CLI
+      # Otto is bundled with the Astro CLI starting at 1.42.0, so the only
+      # supported install path is the CLI. Defer to setup-astro-cli for the
+      # actual download — it handles platform detection, version pinning, and
+      # the "already installed" fast-path.
+      id: install
+      uses: astronomer/setup-astro-cli@v0.0.1
+      with:
+        version: ${{ inputs.astro-cli-version }}
+
+    - name: Verify Otto is bundled
+      id: verify
+      shell: bash
+      env:
+        CLI_VERSION: ${{ steps.install.outputs.cli-version }}
+        CLI_PATH: ${{ steps.install.outputs.cli-path }}
+      run: |
+        echo ::group::Verify Otto
+        # Sanity-check that this CLI knows about `otto`. Older versions silently
+        # accept unknown subcommands and exit zero, so we look for "otto" in
+        # `astro --help`. Fail loud if it isn't there — running blind would
+        # produce a confusing "no diff posted" outcome instead of an actionable
+        # error.
+        if ! "$CLI_PATH" --help 2>&1 | grep -qiE '^\s*otto\b'; then
+          echo "::error::Astro CLI ${CLI_VERSION} at ${CLI_PATH} does not bundle Otto. Otto requires Astro CLI >= 1.42.0. Set the 'astro-cli-version' input to '1.42.0' or newer."
+          exit 1
+        fi
+        echo "Astro CLI ${CLI_VERSION} bundles Otto."
+        echo ::endgroup::
+
+    - name: Gather PR context
+      id: ctx
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        MAX_DIFF_LINES: ${{ inputs.max-diff-lines }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/gather-context.sh"
+
+    - name: Build prompt
+      id: prompt
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/scripts/build-prompt.sh"
+
+    - name: Run Otto review
+      id: otto
+      shell: bash
+      env:
+        # Otto reads these for gateway auth (set by the auth step above).
+        ASTRO_TOKEN: ${{ env.ASTRO_TOKEN }}
+        ASTRO_DOMAIN: ${{ env.ASTRO_DOMAIN }}
+        ASTRO_ORGANIZATION: ${{ env.ASTRO_ORGANIZATION }}
+        # GitHub token is intentionally NOT exposed to Otto. The review is
+        # posted by the post-review step under the workflow's permissions.
+        ASTRO_CLI_PATH: ${{ steps.install.outputs.cli-path }}
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/run-otto.sh"
+
+    - name: Post review
+      id: post-review
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        VERDICT_FILE: /tmp/otto-review/verdict-raw.txt
+        ACTION_PATH: ${{ github.action_path }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/post-review.sh"

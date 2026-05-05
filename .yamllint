@@ -1,0 +1,13 @@
+---
+extends: default
+
+rules:
+  line-length: disable
+  document-start:
+    present: false
+  indentation:
+    spaces: 2
+    indent-sequences: true
+    check-multi-line-strings: false  # disabled because Bash scripts contain indented code
+  truthy:
+    check-keys: false  # GitHub Actions uses 'on:' as a top-level key
