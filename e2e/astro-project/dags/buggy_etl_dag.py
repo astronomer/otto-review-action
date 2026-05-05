@@ -26,7 +26,8 @@ with DAG(
 
     @task
     def extract(file_path):
-        return pd.read_csv(file_path)
+        pd.read_csv(file_path)
+        return None
 
     @task
     def transform(_raw_data):
