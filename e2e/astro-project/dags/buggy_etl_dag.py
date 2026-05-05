@@ -24,10 +24,8 @@ with DAG(
     schedule_interval=None,
 ):
 
-    @task
     def extract(file_path):
-        pd.read_csv(file_path)
-        return None
+        return pd.read_csv(file_path)
 
     @task
     def transform(_raw_data):
