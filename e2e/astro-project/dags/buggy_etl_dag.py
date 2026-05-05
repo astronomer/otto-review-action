@@ -30,11 +30,11 @@ with DAG(
         return None
 
     @task
-    def transform(_raw_data):
+    def transform(_raw_data: pd.DataFrame):
         return _raw_data.loc[_raw_data["items_sold"] < 100, :]
 
     @task
-    def load(_cleaned_data, file_path):
+    def load(_cleaned_data: pd.DataFrame, file_path: str):
         _cleaned_data.to_csv(file_path)
 
     raw_data = extract("raw_data.csv")
