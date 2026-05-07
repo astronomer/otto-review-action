@@ -171,6 +171,12 @@ runs:
         ASTRO_TOKEN: ${{ env.ASTRO_TOKEN }}
         ASTRO_DOMAIN: ${{ env.ASTRO_DOMAIN }}
         ASTRO_ORGANIZATION: ${{ env.ASTRO_ORGANIZATION }}
+        # Override Otto's default LLM-gateway attribution headers so review
+        # traffic bills as this action, not as bare "otto". The version is
+        # the ref the workflow pinned us to (tag like "v0.0.1", branch like
+        # "main", or a commit SHA) — never empty for composite actions.
+        OTTO_X_ASTRO_CLIENT_IDENTIFIER: otto-review-action
+        OTTO_X_ASTRO_CLIENT_VERSION: ${{ github.action_ref }}
         # GitHub token is intentionally NOT exposed to Otto. The review is
         # posted by the post-review step under the workflow's permissions.
         ASTRO_CLI_PATH: ${{ steps.install.outputs.cli-path }}
