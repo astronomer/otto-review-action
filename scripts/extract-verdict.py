@@ -1,9 +1,10 @@
 """Extract Otto's final structured verdict from its --mode json stdout stream.
 
-Otto emits a stream of events as JSONL when run with --mode json. When
---output-schema is set, the agent calls a synthetic `submit_final_answer` tool
-whose argument is the structured result. The exact event shape depends on the
-Pi runtime version, so we look in a few places before giving up:
+Otto emits a stream of events as JSONL when run with --mode json. Under
+`--persona reviewer` the persona's bundled output schema registers a synthetic
+`submit_final_answer` tool whose argument is the structured result. The exact
+event shape depends on the Pi runtime version, so we look in a few places
+before giving up:
 
   1. An event with type `final_result` / `result` / `submit_final_answer`,
      where the verdict is in `.result`, `.output`, `.answer`, or `.arguments`.

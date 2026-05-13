@@ -2,7 +2,7 @@
 
 GitHub Action that runs Astronomer's [Otto](https://github.com/astronomer/otto) data engineering agent against a pull request, posts inline review comments where the code has issues, and offers commit suggestions where a concrete fix is available.
 
-The action's review prompt lives in [`system-prompt.md`](./system-prompt.md) and is iterated on independently from the surrounding workflow plumbing.
+The review prompt, the read-only tool allowlist, and the verdict output schema are bundled into Otto's [`reviewer` persona](https://github.com/astronomer/otto/blob/main/src/personas/reviewer.md); this action invokes Otto with `--persona reviewer` and forwards inputs (model, allowed-tools override, etc.) on top.
 
 ## Use this action
 
@@ -41,10 +41,10 @@ jobs:
 | `astro-domain` | `astronomer.io` | Astronomer domain. Override for non-prod environments (e.g. `astronomer-dev.io`). |
 | `astro-organization` | env `ASTRO_ORGANIZATION` | Astronomer organization ID for gateway routing. |
 | `github-token` | `${{ github.token }}` | Token used to read the PR and post the review. |
-| `astro-cli-version` | `""` (latest) | Astro CLI version installed at the start of the run. Otto is bundled with the Astro CLI starting at 1.42.0, so any pinned value must be `1.42.0` or newer. |
-| `model` | `""` (Otto's default) | Model identifier passed to Otto via `--model`. |
+| `astro-cli-version` | `""` (latest) | Astro CLI version installed at the start of the run. The pinned version must ship an Otto build that includes the `reviewer` persona (otto PR #212 or later); the action's verify step fails loud if it does not. |
+| `model` | `""` (persona's default tier) | Model identifier passed to Otto via `--model`. Empty uses the model the reviewer persona's tier maps to. |
 | `max-diff-lines` | `50000` | Diffs longer than this are truncated. Truncation is itself a signal not to auto-approve. |
-| `allowed-tools` | `read,grep,find,ls,bash` | Comma-separated tool allowlist passed to Otto. Set to `""` to use Otto's full default tool set. |
+| `allowed-tools` | `""` (persona's allowlist) | Comma-separated tool allowlist passed to Otto. Empty uses the reviewer persona's built-in allowlist (`read, grep, find, ls, bash`). Set this to override with a different list. |
 | `dry-run` | `false` | When `true`, the review event is posted as `COMMENT` regardless of Otto's verdict. |
 
 ## Outputs
@@ -59,15 +59,15 @@ jobs:
 
 1. Checks out the PR head with full history.
 2. Resolves auth inputs and exports `ASTRO_TOKEN` / `ASTRO_DOMAIN` / `ASTRO_ORGANIZATION` for Otto.
-3. Installs the Astro CLI via [`astronomer/setup-astro-cli`](https://github.com/astronomer/setup-astro-cli) and verifies the CLI bundles `astro otto` (Astro CLI ≥ 1.42.0). Otto is **only** available as part of the Astro CLI; there is no separate Otto binary.
+3. Installs the Astro CLI via [`astronomer/setup-astro-cli`](https://github.com/astronomer/setup-astro-cli) and verifies the CLI bundles `astro otto` **and** the `reviewer` persona. Otto is **only** available as part of the Astro CLI; there is no separate Otto binary.
 4. Gathers PR metadata (`gh pr view`) and the base..head diff (`gh pr diff`), capping the diff at `max-diff-lines`.
 5. Writes the metadata + diff to a sidecar file Otto reads via its `read` tool. Keeps the prompt out of `argv` so large diffs don't trip `ARG_MAX`.
-6. Runs `astro otto --mode json --output-schema verdict-schema.json --append-system-prompt system-prompt.md`. Otto returns a structured verdict by calling its synthetic `submit_final_answer` tool.
+6. Runs `astro otto --mode json --persona reviewer`. The persona binds the Astro/Airflow review prompt, the read-only tool allowlist, plan-mode permissions, and the verdict output schema; Otto returns a structured verdict by calling the synthetic `submit_final_answer` tool the persona's schema registers.
 7. Parses the verdict, drops any inline comment that doesn't anchor to a file in the diff, and posts a single PR review with the remaining comments. When a comment carries a `suggestion`, the action renders it as a GitHub commit-suggestion block.
 
 ## Verdict schema
 
-Otto is constrained to return a JSON object matching [`verdict-schema.json`](./verdict-schema.json):
+Otto is constrained to return a JSON object matching the reviewer persona's bundled schema ([`reviewer.schema.json`](https://github.com/astronomer/otto/blob/main/src/personas/reviewer.schema.json) in the otto repo):
 
 ```json
 {
