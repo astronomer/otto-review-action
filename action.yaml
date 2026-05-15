@@ -24,7 +24,7 @@ inputs:
   astro-cli-version:
     required: false
     default: ""
-    description: "Astro CLI version to install. Otto is bundled with the Astro CLI; this action also requires a build that ships the `reviewer` persona (introduced in otto PR #212). Empty installs the latest published version, which is the recommended setting."
+    description: "Astro CLI version to install. Otto is bundled with the Astro CLI and auto-updates independently; this action requires an Otto build that ships the `reviewer` persona. Empty installs the latest published version, which is the recommended setting."
   model:
     required: false
     default: ""
@@ -148,10 +148,10 @@ runs:
         fi
         # Also check the bundled Otto knows about the `reviewer` persona. The
         # action no longer ships its own system prompt + verdict schema — both
-        # come from the persona, introduced in otto PR #212. A pre-PR-212 Otto
-        # would error out at runtime; fail here with an actionable message.
+        # come from the persona. An Otto build without it would error out at
+        # runtime; fail here with an actionable message.
         if ! "$CLI_PATH" otto --help 2>&1 | grep -qE '\breviewer\b'; then
-          echo "::error::Astro CLI ${CLI_VERSION} bundles Otto but not the 'reviewer' persona. Bump 'astro-cli-version' to a release that ships an Otto with the reviewer persona (otto PR #212 or later)."
+          echo "::error::Astro CLI ${CLI_VERSION} bundles Otto but not the 'reviewer' persona. Update to a newer Otto build (Otto auto-updates on first 'astro otto' invocation; clear ~/.astro/bin/otto if it appears stuck)."
           exit 1
         fi
         echo "Astro CLI ${CLI_VERSION} bundles Otto with the reviewer persona."

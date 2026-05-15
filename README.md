@@ -41,7 +41,7 @@ jobs:
 | `astro-domain` | `astronomer.io` | Astronomer domain. Override for non-prod environments (e.g. `astronomer-dev.io`). |
 | `astro-organization` | env `ASTRO_ORGANIZATION` | Astronomer organization ID for gateway routing. |
 | `github-token` | `${{ github.token }}` | Token used to read the PR and post the review. |
-| `astro-cli-version` | `""` (latest) | Astro CLI version installed at the start of the run. The pinned version must ship an Otto build that includes the `reviewer` persona (otto PR #212 or later); the action's verify step fails loud if it does not. |
+| `astro-cli-version` | `""` (latest) | Astro CLI version installed at the start of the run. Otto is bundled with the CLI and auto-updates independently; this action requires Otto >= 0.1.8 (the release that introduced the `reviewer` persona). The verify step fails loud if the running Otto is older. |
 | `model` | `""` (persona's default tier) | Model identifier passed to Otto via `--model`. Empty uses the model the reviewer persona's tier maps to. |
 | `max-diff-lines` | `50000` | Diffs longer than this are truncated. Truncation is itself a signal not to auto-approve. |
 | `allowed-tools` | `""` (persona's allowlist) | Comma-separated tool allowlist passed to Otto. Empty uses the reviewer persona's built-in allowlist (`read, grep, find, ls, bash`). Set this to override with a different list. |
