@@ -26,7 +26,7 @@ e2e/
 
 ## How a test run works
 
-1. A contributor opens a PR that modifies a file under `e2e/**` (typically a DAG) or any of the action's own source files (`action.yaml`, `scripts/**`, `system-prompt.md`, `verdict-schema.json`).
+1. A contributor opens a PR that modifies a file under `e2e/**` (typically a DAG) or any of the action's own source files (`action.yaml`, `scripts/**`).
 2. The path filter in [`e2e-otto-review.yaml`](../.github/workflows/e2e-otto-review.yaml) triggers the workflow.
 3. The workflow does an `actions/checkout` so the action's manifest is on the runner, then calls `uses: ./` — meaning the action source from the PR branch is what runs, not a published tag. This is what makes the e2e useful for iterating on the action itself.
 4. The action checks out the PR head, installs the Astro CLI, and runs `astro otto …` against the PR diff.
@@ -47,7 +47,7 @@ If you're testing against a non-prod environment, also pass `astro-domain: astro
 
 ### Iterate on the action
 
-1. Edit the action source (`action.yaml`, anything under `scripts/`, `system-prompt.md`, or `verdict-schema.json`).
+1. Edit the action source (`action.yaml` or anything under `scripts/`). The review prompt and verdict schema now live in Otto's `reviewer` persona ([`astronomer/otto`](https://github.com/astronomer/otto/tree/main/src/personas)) — iterate on those upstream and roll forward the Astro CLI pin if you need a newer prompt.
 2. Optionally tweak a DAG under `astro-project/dags/` to give Otto something to comment on.
 3. Push a branch and open a PR to `main`. The workflow runs and posts the review on your own PR.
 4. Iterate by pushing more commits — the `concurrency` block cancels the in-flight review for the previous SHA so you only see comments for the latest push.
@@ -62,7 +62,7 @@ If you're testing against a non-prod environment, also pass `astro-domain: astro
 - `_raw_data` / `_cleaned_data` use a non-standard underscore-prefix convention.
 - `extract` does not return its result — `pd.read_csv(file_path)` is called but not returned.
 
-If Otto's review on a PR that introduces this DAG misses any of those, treat it as a regression in either the system prompt or the verdict-extraction path and fix before merging.
+If Otto's review on a PR that introduces this DAG misses any of those, treat it as a regression in either the upstream reviewer persona ([`astronomer/otto`](https://github.com/astronomer/otto/blob/main/src/personas/reviewer.md)) or the verdict-extraction path and fix before merging.
 
 ### Verify Otto stays quiet on a clean DAG
 

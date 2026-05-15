@@ -24,7 +24,7 @@ inputs:
   astro-cli-version:
     required: false
     default: ""
-    description: "Astro CLI version to install. Otto is bundled with the Astro CLI starting at 1.42.0. Empty installs the latest published version."
+    description: "Astro CLI version to install. Otto is bundled with the Astro CLI and auto-updates independently; this action requires an Otto build that ships the `reviewer` persona. Empty installs the latest published version, which is the recommended setting."
   model:
     required: false
     default: ""
@@ -35,8 +35,8 @@ inputs:
     description: "Maximum number of diff lines passed to Otto. Larger diffs are truncated. Truncation is itself a signal that the PR is too large for an automated review."
   allowed-tools:
     required: false
-    default: "read,grep,find,ls,bash"
-    description: "Comma-separated list of Otto tools the reviewer may call. The default is read-only plus bash (for invoking skill helpers). Set to '' to allow Otto's full default tool set."
+    default: ""
+    description: "Comma-separated list of Otto tools the reviewer may call. Empty (default) uses the reviewer persona's built-in allowlist (read, grep, find, ls, bash). Set this to override with a different list."
   dry-run:
     required: false
     default: "false"
@@ -118,10 +118,12 @@ runs:
         echo "organization=$ORG" >> "$GITHUB_OUTPUT"
 
     - name: Install Astro CLI
-      # Otto is bundled with the Astro CLI starting at 1.42.0, so the only
-      # supported install path is the CLI. Defer to setup-astro-cli for the
-      # actual download — it handles platform detection, version pinning, and
-      # the "already installed" fast-path.
+      # Otto is bundled with the Astro CLI, so the only supported install path
+      # is the CLI. This action additionally needs a build that ships the
+      # `reviewer` persona; the next step verifies that and fails loud if it
+      # is missing. Defer to setup-astro-cli for the actual download — it
+      # handles platform detection, version pinning, and the "already
+      # installed" fast-path.
       id: install
       uses: astronomer/setup-astro-cli@v0.0.1
       with:
@@ -144,7 +146,15 @@ runs:
           echo "::error::Astro CLI ${CLI_VERSION} at ${CLI_PATH} does not bundle Otto. Otto requires Astro CLI >= 1.42.0. Set the 'astro-cli-version' input to '1.42.0' or newer."
           exit 1
         fi
-        echo "Astro CLI ${CLI_VERSION} bundles Otto."
+        # Also check the bundled Otto knows about the `reviewer` persona. The
+        # action no longer ships its own system prompt + verdict schema — both
+        # come from the persona. An Otto build without it would error out at
+        # runtime; fail here with an actionable message.
+        if ! "$CLI_PATH" otto --help 2>&1 | grep -qE '\breviewer\b'; then
+          echo "::error::Astro CLI ${CLI_VERSION} bundles Otto but not the 'reviewer' persona. Update to a newer Otto build (Otto auto-updates on first 'astro otto' invocation; clear ~/.astro/bin/otto if it appears stuck)."
+          exit 1
+        fi
+        echo "Astro CLI ${CLI_VERSION} bundles Otto with the reviewer persona."
         echo ::endgroup::
 
     - name: Gather PR context

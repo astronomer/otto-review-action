@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Run Otto (via the Astro CLI) over the prepared prompt and capture the
-# structured verdict. Otto ships bundled with the Astro CLI starting at 1.42.0,
-# so the only supported invocation is `astro otto ...`.
+# structured verdict. Otto ships bundled with the Astro CLI, so the only
+# supported invocation is `astro otto ...`.
 #
 # Required env:
 #   ASTRO_TOKEN / ASTRO_DOMAIN / ASTRO_ORGANIZATION - gateway auth (set by action.yaml)
 #   ASTRO_CLI_PATH   - absolute path to the astro binary
-#   ACTION_PATH      - path to this action's checkout (system-prompt + schema live here)
-#   INPUT_MODEL      - optional --model override (empty = Otto's default)
-#   INPUT_ALLOWED_TOOLS - comma-separated tool allowlist; empty = Otto's default
+#   ACTION_PATH      - path to this action's checkout
+#   INPUT_MODEL      - optional --model override (empty = persona / Otto default)
+#   INPUT_ALLOWED_TOOLS - comma-separated tool allowlist; empty = persona default
 #
 # Writes /tmp/otto-review/{otto-stdout.jsonl,verdict-raw.txt}.
 
@@ -23,15 +23,18 @@ mkdir -p /tmp/otto-review
 
 # Build the command. --no-session keeps Otto from writing session files into
 # the runner home; --skip-permissions disables interactive prompts (CI has no
-# TTY); --output-schema makes Otto register a synthetic submit_final_answer
-# tool so we get a JSON object that conforms to verdict-schema.json.
+# TTY); --persona reviewer binds Otto's bundled Astro/Airflow review prompt,
+# read-only tool allowlist, plan-mode permissions, and verdict output schema
+# in one flag — Otto registers the synthetic submit_final_answer tool from
+# the persona's bundled schema and we get back a structured verdict matching
+# the same shape as before. Caller-explicit --model / --allowed-tools below
+# still win over the persona's defaults.
 otto_args=(
   otto
   --mode json
   --no-session
   --skip-permissions
-  --output-schema "@$ACTION_PATH/verdict-schema.json"
-  --append-system-prompt "$ACTION_PATH/system-prompt.md"
+  --persona reviewer
 )
 if [[ -n "${INPUT_MODEL:-}" ]]; then
   otto_args+=(--model "$INPUT_MODEL")
@@ -74,10 +77,10 @@ if [[ "$otto_exit" -ne 0 ]]; then
 fi
 
 # Extract the structured verdict from Otto's event stream. The agent submits
-# its final answer through the synthetic `submit_final_answer` tool created by
-# --output-schema. Look for that event first; if we can't find it, fall back
-# to scanning the whole stream for the largest balanced JSON object that
-# matches the schema's required keys.
+# its final answer through the synthetic `submit_final_answer` tool that the
+# reviewer persona's bundled output schema registers. Look for that event
+# first; if we can't find it, fall back to scanning the whole stream for the
+# largest balanced JSON object that matches the schema's required keys.
 python3 "$ACTION_PATH/scripts/extract-verdict.py" \
   < /tmp/otto-review/otto-stdout.jsonl \
   > /tmp/otto-review/verdict-raw.txt
