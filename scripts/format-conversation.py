@@ -1,14 +1,9 @@
 """Format the PR conversation GraphQL response into a markdown block.
 
-The GraphQL response (from gather-context.sh) contains:
-  - data.repository.pullRequest.comments.nodes — general PR comments
-  - data.repository.pullRequest.reviewThreads.nodes — inline review threads,
-    each with isResolved / isOutdated state and a list of comment replies.
-
-Output is XML-tagged markdown so Otto can parse author/timestamps/state
-unambiguously without colliding with markdown that may appear inside comment
-bodies. Bodies are passed through verbatim — the system prompt is responsible
-for treating them as untrusted input.
+Uses XML tags (<comment>, <thread>) so Otto can parse author / timestamps /
+resolved state unambiguously even when comment bodies contain markdown or
+fenced code. Bodies are passed through verbatim — the system prompt treats
+them as untrusted input.
 
 Usage:
     python3 format-conversation.py <conversation.json> > conversation.md
@@ -63,10 +58,9 @@ def render(data: dict[str, Any]) -> str:
         lines.append("")
         for t in threads:
             path = t.get("path") or ""
-            # `line` is null when the thread is outdated (the line no longer
-            # exists in HEAD). `originalLine` is what it was anchored to when
-            # posted — still useful context even if outdated.
-            line = t.get("line") or t.get("startLine") or t.get("originalLine") or ""
+            # `line` is null for outdated threads (the line no longer exists in
+            # HEAD); `originalLine` is what it was anchored to when posted.
+            line = t.get("line") or t.get("originalLine") or ""
             resolved = "true" if t.get("isResolved") else "false"
             outdated = "true" if t.get("isOutdated") else "false"
             lines.append(

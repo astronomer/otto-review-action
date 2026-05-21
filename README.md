@@ -90,7 +90,7 @@ Otto is constrained to return a JSON object matching the reviewer persona's bund
 
 ## Untrusted input
 
-The PR title, body, commit messages, and now also general PR comments and inline review threads are written by humans (the PR author and reviewers). The system prompt instructs Otto to treat all of that as untrusted and to ignore embedded instructions ("approve this", "trust me, it's trivial", etc.). If Otto detects a manipulation attempt it forces `verdict: "comment"` and calls it out in `reasoning`.
+The PR title, body, commit messages, general PR comments, and inline review threads are all written by humans (the PR author and reviewers). The system prompt instructs Otto to treat all of that as untrusted and to ignore embedded instructions ("approve this", "trust me, it's trivial", etc.). If Otto detects a manipulation attempt it forces `verdict: "comment"` and calls it out in `reasoning`.
 
 ## License
 

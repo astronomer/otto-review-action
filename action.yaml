@@ -171,6 +171,8 @@ runs:
     - name: Build prompt
       id: prompt
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: bash "$GITHUB_ACTION_PATH/scripts/build-prompt.sh"
 
     - name: Run Otto review

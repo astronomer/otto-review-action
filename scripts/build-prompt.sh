@@ -12,12 +12,13 @@
 
 set -euo pipefail
 
+: "${ACTION_PATH:?}"
+
 truncated="$(cat /tmp/otto-review/diff-truncated.txt 2>/dev/null || echo false)"
 
-# Render the PR conversation (general comments + inline review threads with
-# resolved/outdated state) as markdown. Done here rather than in
-# gather-context.sh so the GraphQL JSON stays around as a debugging artifact.
-python3 "${ACTION_PATH:-$GITHUB_ACTION_PATH}/scripts/format-conversation.py" \
+# Render the PR conversation JSON to markdown. Kept separate from the fetch in
+# gather-context.sh so pr-conversation.json persists as a debugging artifact.
+python3 "$ACTION_PATH/scripts/format-conversation.py" \
   /tmp/otto-review/pr-conversation.json \
   > /tmp/otto-review/pr-conversation.md
 

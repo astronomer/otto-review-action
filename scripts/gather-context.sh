@@ -25,11 +25,8 @@ gh pr view "$PR_NUMBER" \
   > /tmp/otto-review/pr-meta.json
 
 # PR conversation: general issue comments + inline review threads with their
-# resolved/outdated state and threaded replies. The REST endpoints don't expose
-# isResolved on review threads, so we use GraphQL and pull everything in one
-# round-trip. Pagination is capped: first 100 general comments, first 100
-# threads with first 50 comments each — past that, the PR is too noisy to
-# fully feed back to Otto anyway.
+# resolved/outdated state and threaded replies. REST doesn't expose isResolved
+# on review threads, so we use GraphQL to pull everything in one round-trip.
 OWNER="${GITHUB_REPOSITORY%%/*}"
 REPO="${GITHUB_REPOSITORY##*/}"
 gh api graphql \
@@ -51,7 +48,6 @@ gh api graphql \
               path
               line
               originalLine
-              startLine
               comments(first: 50) {
                 nodes {
                   author { login }
