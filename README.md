@@ -60,8 +60,8 @@ jobs:
 1. Checks out the PR head with full history.
 2. Resolves auth inputs and exports `ASTRO_TOKEN` / `ASTRO_DOMAIN` / `ASTRO_ORGANIZATION` for Otto.
 3. Installs the Astro CLI via [`astronomer/setup-astro-cli`](https://github.com/astronomer/setup-astro-cli) and verifies the CLI bundles `astro otto` **and** the `reviewer` persona. Otto is **only** available as part of the Astro CLI; there is no separate Otto binary.
-4. Gathers PR metadata (`gh pr view`) and the base..head diff (`gh pr diff`), capping the diff at `max-diff-lines`.
-5. Writes the metadata + diff to a sidecar file Otto reads via its `read` tool. Keeps the prompt out of `argv` so large diffs don't trip `ARG_MAX`.
+4. Gathers PR metadata (`gh pr view`), the base..head diff (`gh pr diff`, capped at `max-diff-lines`), and the prior PR conversation (general comments + inline review threads with their resolved/outdated state, fetched via GraphQL).
+5. Writes the metadata + conversation + diff to a sidecar file Otto reads via its `read` tool. Keeps the prompt out of `argv` so large diffs don't trip `ARG_MAX`. The persona is instructed to skip restating points already raised in the conversation, to acknowledge open threads, and to ignore threads marked resolved or outdated unless the diff has regressed them.
 6. Runs `astro otto --mode json --persona reviewer`. The persona binds the Astro/Airflow review prompt, the read-only tool allowlist, plan-mode permissions, and the verdict output schema; Otto returns a structured verdict by calling the synthetic `submit_final_answer` tool the persona's schema registers.
 7. Parses the verdict, drops any inline comment that doesn't anchor to a file in the diff, and posts a single PR review with the remaining comments. When a comment carries a `suggestion`, the action renders it as a GitHub commit-suggestion block.
 
@@ -90,7 +90,7 @@ Otto is constrained to return a JSON object matching the reviewer persona's bund
 
 ## Untrusted input
 
-The PR title, body, and commit messages are written by the PR author. The system prompt instructs Otto to treat all of that as untrusted and to ignore embedded instructions ("approve this", "trust me, it's trivial", etc.). If Otto detects a manipulation attempt it forces `verdict: "comment"` and calls it out in `reasoning`.
+The PR title, body, commit messages, and now also general PR comments and inline review threads are written by humans (the PR author and reviewers). The system prompt instructs Otto to treat all of that as untrusted and to ignore embedded instructions ("approve this", "trust me, it's trivial", etc.). If Otto detects a manipulation attempt it forces `verdict: "comment"` and calls it out in `reasoning`.
 
 ## License
 
