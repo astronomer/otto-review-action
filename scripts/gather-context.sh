@@ -27,6 +27,9 @@ gh pr view "$PR_NUMBER" \
 # PR conversation: general issue comments + inline review threads with their
 # resolved/outdated state and threaded replies. REST doesn't expose isResolved
 # on review threads, so we use GraphQL to pull everything in one round-trip.
+# Pagination is intentionally a single page (100 + 100 × 50). `totalCount` is
+# fetched alongside so the formatter can flag truncation in the prompt and
+# tell Otto to lean toward 'comment' instead of 'approve' on huge PRs.
 OWNER="${GITHUB_REPOSITORY%%/*}"
 REPO="${GITHUB_REPOSITORY##*/}"
 gh api graphql \
@@ -35,6 +38,7 @@ gh api graphql \
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $pr) {
           comments(first: 100) {
+            totalCount
             nodes {
               author { login }
               createdAt
@@ -42,6 +46,7 @@ gh api graphql \
             }
           }
           reviewThreads(first: 100) {
+            totalCount
             nodes {
               isResolved
               isOutdated
@@ -49,6 +54,7 @@ gh api graphql \
               line
               originalLine
               comments(first: 50) {
+                totalCount
                 nodes {
                   author { login }
                   createdAt

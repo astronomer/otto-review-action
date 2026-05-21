@@ -20,7 +20,7 @@ import pandas as pd
 
 with DAG(
     dag_id="buggy_etl_dag",
-    start_date=datetime(2026, 1, 2),
+    start_date=datetime(2026, 1, 3),
     schedule_interval=None,
 ):
 
