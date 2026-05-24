@@ -24,6 +24,51 @@ gh pr view "$PR_NUMBER" \
   --json title,body,additions,deletions,changedFiles,author,baseRefName,headRefName \
   > /tmp/otto-review/pr-meta.json
 
+# PR conversation: general issue comments + inline review threads with their
+# resolved/outdated state and threaded replies. REST doesn't expose isResolved
+# on review threads, so we use GraphQL to pull everything in one round-trip.
+# Pagination is intentionally a single page (100 + 100 × 50). `totalCount` is
+# fetched alongside so the formatter can flag truncation in the prompt and
+# tell Otto to lean toward 'comment' instead of 'approve' on huge PRs.
+OWNER="${GITHUB_REPOSITORY%%/*}"
+REPO="${GITHUB_REPOSITORY##*/}"
+gh api graphql \
+  -f query='
+    query($owner: String!, $repo: String!, $pr: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pr) {
+          comments(first: 100) {
+            totalCount
+            nodes {
+              author { login }
+              createdAt
+              body
+            }
+          }
+          reviewThreads(first: 100) {
+            totalCount
+            nodes {
+              isResolved
+              isOutdated
+              path
+              line
+              originalLine
+              comments(first: 50) {
+                totalCount
+                nodes {
+                  author { login }
+                  createdAt
+                  body
+                }
+              }
+            }
+          }
+        }
+      }
+    }' \
+  -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
+  > /tmp/otto-review/pr-conversation.json
+
 # Diff. Prefer `gh pr diff` since it speaks the GitHub API directly and handles
 # fork PRs and rebased branches without needing both refs locally. Fall back to
 # git when the API call fails (e.g. archived repo, transient API hiccup).
