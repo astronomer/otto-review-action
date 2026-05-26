@@ -1,30 +1,24 @@
 #!/usr/bin/env bash
-# Dismiss prior reviews and resolve prior review threads posted by this action
-# on the same PR. Identification uses the hidden marker that post-review.sh
-# stamps into every body it writes.
+# Dismiss / supersede prior top-level reviews posted by this action on the
+# same PR. Identification uses the hidden marker that post-review.sh stamps
+# into every body it writes.
+#
+# Inline review thread resolution is NOT handled here — that's now the
+# reviewer agent's job via the `resolved_thread_ids` field in its verdict,
+# applied by post-review.sh after the new review is posted.
 #
 # Required env:
 #   GH_TOKEN          - github token with pull-requests:write
 #   GITHUB_REPOSITORY - owner/repo (auto-set by Actions runner)
 #   PR_NUMBER         - PR number being reviewed
-# Optional env:
-#   RESOLVE_TOKEN     - separate token used for the resolveReviewThread
-#                       GraphQL mutation. The default GITHUB_TOKEN cannot
-#                       call it ("Resource not accessible by integration"
-#                       even with pull-requests:write), so without an
-#                       override the resolve step warns and skips.
 
 set -euo pipefail
 
 : "${GH_TOKEN:?}"
 : "${PR_NUMBER:?}"
 : "${GITHUB_REPOSITORY:?}"
-RESOLVE_TOKEN="${RESOLVE_TOKEN:-}"
 
 MARKER='<!-- otto-reviewer -->'
-
-owner=${GITHUB_REPOSITORY%%/*}
-repo=${GITHUB_REPOSITORY##*/}
 
 SUPERSEDED_NOTE='_Superseded by a newer otto-review-action run._'
 
@@ -79,55 +73,6 @@ else
   echo "No prior otto-reviewer COMMENT reviews to mark superseded."
 fi
 
-# 3) Resolve prior inline-comment threads tagged with our marker — but only
-#    those GitHub has marked outdated (`isOutdated == true`). Outdated means
-#    the hunk the comment anchored to was modified by a later commit, which
-#    is our proxy for "the issue was addressed." Threads whose code is
-#    unchanged stay open: the issue is presumably still there. Review threads
-#    are GraphQL-only — REST has no equivalent. Fetch up to 100 threads;
-#    more than that on a single PR is degenerate.
-thread_filter=$(printf '.data.repository.pullRequest.reviewThreads.nodes
-  | map(select(.isResolved == false and .isOutdated == true and ((.comments.nodes[0].body? // "") | contains("%s"))))
-  | .[].id' "$MARKER")
-
-mapfile -t thread_ids < <(
-  gh api graphql \
-    -f owner="$owner" \
-    -f repo="$repo" \
-    -F pr="$PR_NUMBER" \
-    -f query='
-      query($owner: String!, $repo: String!, $pr: Int!) {
-        repository(owner: $owner, name: $repo) {
-          pullRequest(number: $pr) {
-            reviewThreads(first: 100) {
-              nodes {
-                id
-                isResolved
-                isOutdated
-                comments(first: 1) { nodes { body } }
-              }
-            }
-          }
-        }
-      }' \
-    --jq "$thread_filter"
-)
-
-if (( ${#thread_ids[@]} > 0 )); then
-  if [[ -z "$RESOLVE_TOKEN" ]]; then
-    echo "::warning::${#thread_ids[@]} outdated otto-reviewer thread(s) need resolving, but no 'resolve-token' was provided. The default GITHUB_TOKEN cannot call resolveReviewThread — supply a PAT or GitHub App token via the 'resolve-token' input to enable this step."
-  else
-    echo "Resolving ${#thread_ids[@]} outdated otto-reviewer thread(s)."
-    for thread_id in "${thread_ids[@]}"; do
-      [[ -z "$thread_id" ]] && continue
-      if ! out=$(GH_TOKEN="$RESOLVE_TOKEN" gh api graphql -f threadId="$thread_id" -f query='
-        mutation($threadId: ID!) {
-          resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
-        }' 2>&1); then
-        echo "::warning::Failed to resolve thread $thread_id: $out"
-      fi
-    done
-  fi
-else
-  echo "No outdated otto-reviewer threads to resolve."
-fi
+# Inline-comment thread resolution lives in post-review.sh now: the reviewer
+# agent identifies threads its diff addresses via the verdict's
+# `resolved_thread_ids` field, and post-review.sh resolves exactly those.

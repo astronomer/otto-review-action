@@ -76,49 +76,6 @@ verdict_json="$(python3 "$ACTION_PATH/scripts/filter-comments.py" \
   /tmp/otto-review/diff.capped.patch \
   <<<"$verdict_json")"
 
-# Drop any new inline comment whose {file, line} matches an existing
-# unresolved+non-outdated otto-reviewer thread. dismiss-stale.sh resolves
-# outdated threads upstream; threads anchored to unchanged code stay open as
-# the canonical record of a still-unaddressed finding. Posting a new comment
-# at the same anchor would create a parallel thread for the same issue.
-if ! occupied=$(gh api graphql \
-    -f owner="${GITHUB_REPOSITORY%%/*}" \
-    -f repo="${GITHUB_REPOSITORY##*/}" \
-    -F pr="$PR_NUMBER" \
-    -f query='
-      query($owner: String!, $repo: String!, $pr: Int!) {
-        repository(owner: $owner, name: $repo) {
-          pullRequest(number: $pr) {
-            reviewThreads(first: 100) {
-              nodes {
-                isResolved
-                isOutdated
-                comments(first: 1) { nodes { path, line, body } }
-              }
-            }
-          }
-        }
-      }' \
-    --jq '
-      [.data.repository.pullRequest.reviewThreads.nodes[]
-        | select(.isResolved == false and .isOutdated == false and ((.comments.nodes[0].body? // "") | contains("<!-- otto-reviewer -->")))
-        | {path: .comments.nodes[0].path, line: .comments.nodes[0].line}]' 2>/tmp/otto-review/dedup-err); then
-  echo "::warning::Failed to fetch existing threads for dedup; proceeding without dedup:"
-  cat /tmp/otto-review/dedup-err >&2
-  occupied='[]'
-fi
-
-before_count=$(jq '(.comments // []) | length' <<<"$verdict_json")
-verdict_json=$(jq --argjson occupied "$occupied" '
-  .comments = ((.comments // []) | map(. as $c
-    | select($occupied | map(.path == $c.file and .line == $c.line) | any | not)))
-' <<<"$verdict_json")
-after_count=$(jq '(.comments // []) | length' <<<"$verdict_json")
-suppressed=$((before_count - after_count))
-if (( suppressed > 0 )); then
-  echo "Suppressed $suppressed new inline comment(s) duplicating an open otto-reviewer thread."
-fi
-
 # Build the inline comment payloads. When `suggestion` is set, append a fenced
 # ```suggestion block so reviewers can apply it as a one-click commit.
 # Multi-line ranges need start_line < line; single-line comments omit start_line.
@@ -223,3 +180,29 @@ fi
 step_output verdict "$verdict"
 step_output summary "$summary"
 step_output comment-count "$inline_count"
+
+# Resolve any prior review threads the reviewer flagged as addressed via the
+# `resolved_thread_ids` field in the verdict. Runs after the new review is
+# posted so the timeline shows the new verdict adjacent to the threads it
+# closed. The default GITHUB_TOKEN cannot call resolveReviewThread; when
+# RESOLVE_TOKEN is unset we warn once and skip.
+mapfile -t addressed_ids < <(jq -r '(.resolved_thread_ids // []) | .[]' <<<"$verdict_json")
+addressed_count=${#addressed_ids[@]}
+step_output resolved-thread-count "$addressed_count"
+
+if (( addressed_count > 0 )); then
+  if [[ -z "${RESOLVE_TOKEN:-}" ]]; then
+    echo "::warning::Otto marked $addressed_count prior thread(s) addressed, but no 'resolve-token' was provided. The default GITHUB_TOKEN cannot call resolveReviewThread — supply a PAT or GitHub App token via the 'resolve-token' input to apply the resolutions."
+  else
+    echo "Resolving $addressed_count thread(s) marked addressed by the reviewer."
+    for thread_id in "${addressed_ids[@]}"; do
+      [[ -z "$thread_id" ]] && continue
+      if ! out=$(GH_TOKEN="$RESOLVE_TOKEN" gh api graphql -f threadId="$thread_id" -f query='
+        mutation($threadId: ID!) {
+          resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+        }' 2>&1); then
+        echo "::warning::Failed to resolve thread $thread_id: $out"
+      fi
+    done
+  fi
+fi

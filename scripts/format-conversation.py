@@ -83,6 +83,10 @@ def render(data: dict[str, Any]) -> str:
         lines.append("## Inline review threads")
         lines.append("")
         for t in threads:
+            # The thread ID is the GraphQL node ID. The reviewer persona uses
+            # it to tell the action which prior threads this diff resolves —
+            # see `resolved_thread_ids` in the reviewer schema.
+            thread_id = t.get("id") or ""
             path = t.get("path") or ""
             # `line` is null for outdated threads (the line no longer exists in
             # HEAD); `originalLine` is what it was anchored to when posted.
@@ -99,8 +103,9 @@ def render(data: dict[str, Any]) -> str:
                 else ""
             )
             lines.append(
-                f'<thread path="{_attr(path)}" line="{line}" '
-                f'resolved="{resolved}" outdated="{outdated}"{extra_attr}>'
+                f'<thread id="{_attr(thread_id)}" path="{_attr(path)}" '
+                f'line="{line}" resolved="{resolved}" outdated="{outdated}"'
+                f'{extra_attr}>'
             )
             for c in replies:
                 lines.append(
