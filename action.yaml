@@ -21,6 +21,10 @@ inputs:
     required: false
     default: ${{ github.token }}
     description: "GitHub token used to read PR metadata and post the review. Defaults to the workflow's GITHUB_TOKEN."
+  resolve-token:
+    required: false
+    default: ""
+    description: "Optional token used for the resolveReviewThread GraphQL mutation in the stale-comment cleanup step. The default GITHUB_TOKEN cannot call this mutation (it returns 'Resource not accessible by integration' even with pull-requests:write), so without an override here outdated otto-reviewer threads stay open and the step emits a warning. Provide a PAT or GitHub App installation token with pull_requests:write to enable auto-resolution. The token is only used for thread resolution; review posting and review-body edits still go through 'github-token'."
   astro-cli-version:
     required: false
     default: ""
@@ -206,6 +210,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        RESOLVE_TOKEN: ${{ inputs.resolve-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: bash "$GITHUB_ACTION_PATH/scripts/dismiss-stale.sh"
 

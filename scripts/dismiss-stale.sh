@@ -7,12 +7,19 @@
 #   GH_TOKEN          - github token with pull-requests:write
 #   GITHUB_REPOSITORY - owner/repo (auto-set by Actions runner)
 #   PR_NUMBER         - PR number being reviewed
+# Optional env:
+#   RESOLVE_TOKEN     - separate token used for the resolveReviewThread
+#                       GraphQL mutation. The default GITHUB_TOKEN cannot
+#                       call it ("Resource not accessible by integration"
+#                       even with pull-requests:write), so without an
+#                       override the resolve step warns and skips.
 
 set -euo pipefail
 
 : "${GH_TOKEN:?}"
 : "${PR_NUMBER:?}"
 : "${GITHUB_REPOSITORY:?}"
+RESOLVE_TOKEN="${RESOLVE_TOKEN:-}"
 
 MARKER='<!-- otto-reviewer -->'
 
@@ -35,11 +42,12 @@ if (( ${#review_ids[@]} > 0 )); then
   echo "Dismissing ${#review_ids[@]} prior otto-reviewer review(s)."
   for review_id in "${review_ids[@]}"; do
     [[ -z "$review_id" ]] && continue
-    gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id/dismissals" \
-      --method PUT \
-      -f message='Superseded by a newer otto-review-action run.' \
-      -f event='DISMISS' \
-      >/dev/null || echo "::warning::Failed to dismiss review #$review_id"
+    if ! out=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id/dismissals" \
+        --method PUT \
+        -f message='Superseded by a newer otto-review-action run.' \
+        -f event='DISMISS' 2>&1); then
+      echo "::warning::Failed to dismiss review #$review_id: $out"
+    fi
   done
 else
   echo "No prior otto-reviewer reviews to dismiss."
@@ -61,10 +69,11 @@ if (( ${#commented_ids[@]} > 0 )); then
   superseded_body=$(printf '%s\n%s' "$MARKER" "$SUPERSEDED_NOTE")
   for review_id in "${commented_ids[@]}"; do
     [[ -z "$review_id" ]] && continue
-    gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id" \
-      --method PUT \
-      -f body="$superseded_body" \
-      >/dev/null || echo "::warning::Failed to update commented review #$review_id"
+    if ! out=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id" \
+        --method PUT \
+        -f body="$superseded_body" 2>&1); then
+      echo "::warning::Failed to update commented review #$review_id: $out"
+    fi
   done
 else
   echo "No prior otto-reviewer COMMENT reviews to mark superseded."
@@ -105,14 +114,20 @@ mapfile -t thread_ids < <(
 )
 
 if (( ${#thread_ids[@]} > 0 )); then
-  echo "Resolving ${#thread_ids[@]} outdated otto-reviewer thread(s)."
-  for thread_id in "${thread_ids[@]}"; do
-    [[ -z "$thread_id" ]] && continue
-    gh api graphql -f threadId="$thread_id" -f query='
-      mutation($threadId: ID!) {
-        resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
-      }' >/dev/null || echo "::warning::Failed to resolve thread $thread_id"
-  done
+  if [[ -z "$RESOLVE_TOKEN" ]]; then
+    echo "::warning::${#thread_ids[@]} outdated otto-reviewer thread(s) need resolving, but no 'resolve-token' was provided. The default GITHUB_TOKEN cannot call resolveReviewThread — supply a PAT or GitHub App token via the 'resolve-token' input to enable this step."
+  else
+    echo "Resolving ${#thread_ids[@]} outdated otto-reviewer thread(s)."
+    for thread_id in "${thread_ids[@]}"; do
+      [[ -z "$thread_id" ]] && continue
+      if ! out=$(GH_TOKEN="$RESOLVE_TOKEN" gh api graphql -f threadId="$thread_id" -f query='
+        mutation($threadId: ID!) {
+          resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+        }' 2>&1); then
+        echo "::warning::Failed to resolve thread $thread_id: $out"
+      fi
+    done
+  fi
 else
   echo "No outdated otto-reviewer threads to resolve."
 fi
