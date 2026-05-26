@@ -197,6 +197,18 @@ runs:
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-otto.sh"
 
+    - name: Dismiss stale otto-reviewer output
+      # Dismiss prior reviews and resolve prior inline-comment threads that
+      # this action posted on the same PR, identified by the hidden marker
+      # in their body. Runs before the new review is posted so the timeline
+      # only shows the freshest verdict. Individual failures degrade to
+      # warnings — they should not block the new review.
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/dismiss-stale.sh"
+
     - name: Post review
       id: post-review
       shell: bash
