@@ -47,7 +47,7 @@ If you're testing against a non-prod environment, also pass `astro-domain: astro
 
 ### Iterate on the action
 
-1. Edit the action source (`action.yaml` or anything under `scripts/`). The review prompt and verdict schema now live in Otto's `reviewer` persona ([`astronomer/otto`](https://github.com/astronomer/otto/tree/main/src/personas)) — iterate on those upstream and roll forward the Astro CLI pin if you need a newer prompt.
+1. Edit the action source (`action.yaml` or anything under `scripts/`). The review prompt and verdict schema now live in Otto's `reviewer` persona — iterate on those upstream and roll forward the Astro CLI pin if you need a newer prompt.
 2. Optionally tweak a DAG under `astro-project/dags/` to give Otto something to comment on.
 3. Push a branch and open a PR to `main`. The workflow runs and posts the review on your own PR.
 4. Iterate by pushing more commits — the `concurrency` block cancels the in-flight review for the previous SHA so you only see comments for the latest push.
@@ -62,7 +62,7 @@ If you're testing against a non-prod environment, also pass `astro-domain: astro
 - `_raw_data` / `_cleaned_data` use a non-standard underscore-prefix convention.
 - `extract` does not return its result — `pd.read_csv(file_path)` is called but not returned.
 
-If Otto's review on a PR that introduces this DAG misses any of those, treat it as a regression in either the upstream reviewer persona ([`astronomer/otto`](https://github.com/astronomer/otto/blob/main/src/personas/reviewer.md)) or the verdict-extraction path and fix before merging.
+If Otto's review on a PR that introduces this DAG misses any of those, treat it as a regression in either the upstream reviewer persona or the verdict-extraction path and fix before merging.
 
 ### Verify Otto stays quiet on a clean DAG
 
