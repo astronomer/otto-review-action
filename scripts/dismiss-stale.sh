@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
-# Dismiss / supersede prior top-level reviews posted by this action on the
-# same PR. Identification uses the hidden marker that post-review.sh stamps
-# into every body it writes.
-#
-# Inline review thread resolution is NOT handled here — that's now the
-# reviewer agent's job via the `resolved_thread_ids` field in its verdict,
-# applied by post-review.sh after the new review is posted.
+# Dismiss prior reviews and resolve prior review threads posted by this action
+# on the same PR. Identification uses the hidden marker that post-review.sh
+# stamps into every body it writes.
 #
 # Required env:
 #   GH_TOKEN          - github token with pull-requests:write
 #   GITHUB_REPOSITORY - owner/repo (auto-set by Actions runner)
 #   PR_NUMBER         - PR number being reviewed
+# Optional env:
+#   RESOLVE_TOKEN     - separate token used for the resolveReviewThread
+#                       GraphQL mutation. The default GITHUB_TOKEN cannot
+#                       call it ("Resource not accessible by integration"
+#                       even with pull-requests:write), so without an
+#                       override the resolve step warns and skips.
 
 set -euo pipefail
 
 : "${GH_TOKEN:?}"
 : "${PR_NUMBER:?}"
 : "${GITHUB_REPOSITORY:?}"
+RESOLVE_TOKEN="${RESOLVE_TOKEN:-}"
 
 MARKER='<!-- otto-reviewer -->'
 
-SUPERSEDED_NOTE='_Superseded by a newer otto-review-action run._'
+owner=${GITHUB_REPOSITORY%%/*}
+repo=${GITHUB_REPOSITORY##*/}
+
+OUTDATED_BANNER='> **Outdated** — superseded by a newer otto-review-action run.'
 
 # 1) Dismiss prior APPROVED / CHANGES_REQUESTED reviews tagged with our marker.
 #    GitHub's dismiss-review endpoint only accepts those two states; calling it
@@ -47,32 +53,90 @@ else
   echo "No prior otto-reviewer reviews to dismiss."
 fi
 
-# 2) Replace bodies of prior COMMENTED reviews with a "superseded" note.
-#    GitHub offers no dismissal for COMMENT reviews — editing the body is the
-#    closest we can do to hide the stale verdict. The marker stays in place so
-#    future runs still recognize the review as ours; we skip any review whose
-#    body already contains the superseded note so re-runs are idempotent.
-edit_filter=$(printf '.[] | select((.body // "") | contains("%s")) | select(.state == "COMMENTED") | select((.body // "") | contains("%s") | not) | .id' "$MARKER" "$SUPERSEDED_NOTE")
+# 2) Mark prior COMMENTED reviews as outdated. GitHub offers no dismissal for
+#    COMMENT reviews and no native "mark outdated" primitive for top-level
+#    review bodies. Closest non-destructive option: prepend an Outdated banner
+#    and collapse the original verdict under a <details> block via the
+#    "Update a review" endpoint. The marker stays in place so future runs
+#    still recognize the review as ours; we skip any review whose body
+#    already contains the banner so re-runs are idempotent.
+edit_filter=$(printf '.[] | select((.body // "") | contains("%s")) | select(.state == "COMMENTED") | select((.body // "") | contains("%s") | not) | .id' "$MARKER" "$OUTDATED_BANNER")
 mapfile -t commented_ids < <(
   gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
     --jq "$edit_filter"
 )
 
 if (( ${#commented_ids[@]} > 0 )); then
-  echo "Marking ${#commented_ids[@]} prior otto-reviewer COMMENT review(s) superseded."
-  superseded_body=$(printf '%s\n%s' "$MARKER" "$SUPERSEDED_NOTE")
+  echo "Marking ${#commented_ids[@]} prior otto-reviewer COMMENT review(s) outdated."
   for review_id in "${commented_ids[@]}"; do
     [[ -z "$review_id" ]] && continue
+    # Fetch current body, strip its leading <!-- otto-reviewer --> marker line
+    # (we add a fresh one), and wrap the rest in a <details>. jq does both
+    # so we don't have to round-trip through sed.
+    current_body=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id" \
+      --jq '.body // ""' 2>/dev/null || echo "")
+    stripped_body=$(printf '%s' "$current_body" | awk -v m="$MARKER" 'NR==1 && $0==m {next} {print}')
+    new_body=$(printf '%s\n%s\n\n<details>\n<summary>Previous verdict</summary>\n\n%s\n\n</details>\n' \
+      "$MARKER" "$OUTDATED_BANNER" "$stripped_body")
     if ! out=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id" \
         --method PUT \
-        -f body="$superseded_body" 2>&1); then
-      echo "::warning::Failed to update commented review #$review_id: $out"
+        -f body="$new_body" 2>&1); then
+      echo "::warning::Failed to mark commented review #$review_id outdated: $out"
     fi
   done
 else
-  echo "No prior otto-reviewer COMMENT reviews to mark superseded."
+  echo "No prior otto-reviewer COMMENT reviews to mark outdated."
 fi
 
-# Inline-comment thread resolution lives in post-review.sh now: the reviewer
-# agent identifies threads its diff addresses via the verdict's
-# `resolved_thread_ids` field, and post-review.sh resolves exactly those.
+# 3) Resolve prior inline-comment threads tagged with our marker — but only
+#    those GitHub has marked outdated (`isOutdated == true`). Outdated means
+#    the hunk the comment anchored to was modified by a later commit, which
+#    is our proxy for "the issue was addressed." Threads whose code is
+#    unchanged stay open: the issue is presumably still there. Review threads
+#    are GraphQL-only — REST has no equivalent. Fetch up to 100 threads;
+#    more than that on a single PR is degenerate.
+thread_filter=$(printf '.data.repository.pullRequest.reviewThreads.nodes
+  | map(select(.isResolved == false and .isOutdated == true and ((.comments.nodes[0].body? // "") | contains("%s"))))
+  | .[].id' "$MARKER")
+
+mapfile -t thread_ids < <(
+  gh api graphql \
+    -f owner="$owner" \
+    -f repo="$repo" \
+    -F pr="$PR_NUMBER" \
+    -f query='
+      query($owner: String!, $repo: String!, $pr: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $pr) {
+            reviewThreads(first: 100) {
+              nodes {
+                id
+                isResolved
+                isOutdated
+                comments(first: 1) { nodes { body } }
+              }
+            }
+          }
+        }
+      }' \
+    --jq "$thread_filter"
+)
+
+if (( ${#thread_ids[@]} > 0 )); then
+  if [[ -z "$RESOLVE_TOKEN" ]]; then
+    echo "::warning::${#thread_ids[@]} outdated otto-reviewer thread(s) need resolving, but no 'resolve-token' was provided. The default GITHUB_TOKEN cannot call resolveReviewThread — supply a PAT or GitHub App token via the 'resolve-token' input to enable this step."
+  else
+    echo "Resolving ${#thread_ids[@]} outdated otto-reviewer thread(s)."
+    for thread_id in "${thread_ids[@]}"; do
+      [[ -z "$thread_id" ]] && continue
+      if ! out=$(GH_TOKEN="$RESOLVE_TOKEN" gh api graphql -f threadId="$thread_id" -f query='
+        mutation($threadId: ID!) {
+          resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+        }' 2>&1); then
+        echo "::warning::Failed to resolve thread $thread_id: $out"
+      fi
+    done
+  fi
+else
+  echo "No outdated otto-reviewer threads to resolve."
+fi
