@@ -70,12 +70,15 @@ else
   echo "No prior otto-reviewer COMMENT reviews to mark superseded."
 fi
 
-# 2) Resolve prior inline-comment threads tagged with our marker. Review
-#    threads are GraphQL-only — REST has no equivalent. Fetch up to 100
-#    threads (more than that on a single PR is degenerate); for each
-#    unresolved thread whose first comment carries the marker, resolve it.
+# 3) Resolve prior inline-comment threads tagged with our marker — but only
+#    those GitHub has marked outdated (`isOutdated == true`). Outdated means
+#    the hunk the comment anchored to was modified by a later commit, which
+#    is our proxy for "the issue was addressed." Threads whose code is
+#    unchanged stay open: the issue is presumably still there. Review threads
+#    are GraphQL-only — REST has no equivalent. Fetch up to 100 threads;
+#    more than that on a single PR is degenerate.
 thread_filter=$(printf '.data.repository.pullRequest.reviewThreads.nodes
-  | map(select(.isResolved == false and ((.comments.nodes[0].body? // "") | contains("%s"))))
+  | map(select(.isResolved == false and .isOutdated == true and ((.comments.nodes[0].body? // "") | contains("%s"))))
   | .[].id' "$MARKER")
 
 mapfile -t thread_ids < <(
@@ -91,6 +94,7 @@ mapfile -t thread_ids < <(
               nodes {
                 id
                 isResolved
+                isOutdated
                 comments(first: 1) { nodes { body } }
               }
             }
@@ -101,7 +105,7 @@ mapfile -t thread_ids < <(
 )
 
 if (( ${#thread_ids[@]} > 0 )); then
-  echo "Resolving ${#thread_ids[@]} prior otto-reviewer thread(s)."
+  echo "Resolving ${#thread_ids[@]} outdated otto-reviewer thread(s)."
   for thread_id in "${thread_ids[@]}"; do
     [[ -z "$thread_id" ]] && continue
     gh api graphql -f threadId="$thread_id" -f query='
@@ -110,5 +114,5 @@ if (( ${#thread_ids[@]} > 0 )); then
       }' >/dev/null || echo "::warning::Failed to resolve thread $thread_id"
   done
 else
-  echo "No prior otto-reviewer threads to resolve."
+  echo "No outdated otto-reviewer threads to resolve."
 fi
