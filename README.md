@@ -1,8 +1,8 @@
 # Otto Review
 
-GitHub Action that runs Astronomer's [Otto](https://github.com/astronomer/otto) data engineering agent against a pull request, posts inline review comments where the code has issues, and offers commit suggestions where a concrete fix is available.
+GitHub Action that runs Astronomer's [Otto](https://www.astronomer.io/product/otto/) data engineering agent against a pull request, posts inline review comments where the code has issues, and offers commit suggestions where a concrete fix is available.
 
-The review prompt, the read-only tool allowlist, and the verdict output schema are bundled into Otto's [`reviewer` persona](https://github.com/astronomer/otto/blob/main/src/personas/reviewer.md); this action invokes Otto with `--persona reviewer` and forwards inputs (model, allowed-tools override, etc.) on top.
+The review prompt, the read-only tool allowlist, and the verdict output schema are bundled into Otto's `reviewer` persona; this action invokes Otto with `--persona reviewer` and forwards inputs (model, allowed-tools override, etc.) on top.
 
 ## Use this action
 
@@ -67,7 +67,7 @@ jobs:
 
 ## Verdict schema
 
-Otto is constrained to return a JSON object matching the reviewer persona's bundled schema ([`reviewer.schema.json`](https://github.com/astronomer/otto/blob/main/src/personas/reviewer.schema.json) in the otto repo):
+Otto is constrained to return a JSON object matching the reviewer persona's bundled schema:
 
 ```json
 {
@@ -91,6 +91,35 @@ Otto is constrained to return a JSON object matching the reviewer persona's bund
 ## Untrusted input
 
 The PR title, body, commit messages, general PR comments, and inline review threads all come from outside this action — usually the PR author and human reviewers, but also other bots (including prior runs of this action). The system prompt instructs Otto to treat all of that as untrusted and to ignore embedded instructions ("approve this", "trust me, it's trivial", etc.). Comment bodies and attribute values are HTML-escaped before being embedded between `<comment>` / `<thread>` tags so a body containing `</comment>` or a forged `<thread resolved="true">` can't break the wrapper and inject conversation state. If Otto detects a manipulation attempt it forces `verdict: "comment"` and calls it out in `reasoning`.
+
+## Releasing
+
+Releases are cut from `main`. Each release publishes an immutable `vX.Y.Z` tag and re-points the moving major tag (`vX`) at the same commit so consumers pinned to `@v0` get the update.
+
+1. Make sure `main` is green and you're on the commit you want to ship.
+   ```bash
+   git checkout main && git pull
+   ```
+2. Pick the next version following semver. Cut an annotated tag and move the major-version tag to the same commit.
+   ```bash
+   VERSION=v0.2.0
+   MAJOR=v0
+
+   git tag -a "$VERSION" -m "$VERSION"
+   git tag -f "$MAJOR" "$VERSION"
+   ```
+3. Push both tags. The major tag needs `--force` because it's moving.
+   ```bash
+   git push origin "$VERSION"
+   git push origin "$MAJOR" --force
+   ```
+4. Publish a GitHub Release with notes. `--generate-notes` seeds the body from the commits since the previous tag — edit before publishing if needed.
+   ```bash
+   gh release create "$VERSION" --title "$VERSION" --generate-notes
+   ```
+5. Bump the `uses:` example in this README to the new tag in the same PR that introduces user-visible changes, or as a follow-up.
+
+Breaking changes bump the major (`v0` → `v1`) and start a new moving major tag. Don't repoint `v0` at a `v1.x.x` release.
 
 ## License
 
