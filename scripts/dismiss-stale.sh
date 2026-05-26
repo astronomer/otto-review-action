@@ -19,13 +19,16 @@ MARKER='<!-- otto-reviewer -->'
 owner=${GITHUB_REPOSITORY%%/*}
 repo=${GITHUB_REPOSITORY##*/}
 
-# 1) Dismiss prior top-level reviews tagged with our marker.
-#    Paginate — long-lived PRs accumulate reviews. Skip already-DISMISSED
-#    entries so re-runs don't churn the timeline.
-review_filter=$(printf '.[] | select((.body // "") | contains("%s")) | select(.state != "DISMISSED") | .id' "$MARKER")
+SUPERSEDED_NOTE='_Superseded by a newer otto-review-action run._'
+
+# 1) Dismiss prior APPROVED / CHANGES_REQUESTED reviews tagged with our marker.
+#    GitHub's dismiss-review endpoint only accepts those two states; calling it
+#    on a COMMENTED review returns 422. We handle COMMENTED reviews in step 2.
+#    Paginate — long-lived PRs accumulate reviews.
+dismiss_filter=$(printf '.[] | select((.body // "") | contains("%s")) | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED") | .id' "$MARKER")
 mapfile -t review_ids < <(
   gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
-    --jq "$review_filter"
+    --jq "$dismiss_filter"
 )
 
 if (( ${#review_ids[@]} > 0 )); then
@@ -40,6 +43,31 @@ if (( ${#review_ids[@]} > 0 )); then
   done
 else
   echo "No prior otto-reviewer reviews to dismiss."
+fi
+
+# 2) Replace bodies of prior COMMENTED reviews with a "superseded" note.
+#    GitHub offers no dismissal for COMMENT reviews — editing the body is the
+#    closest we can do to hide the stale verdict. The marker stays in place so
+#    future runs still recognize the review as ours; we skip any review whose
+#    body already contains the superseded note so re-runs are idempotent.
+edit_filter=$(printf '.[] | select((.body // "") | contains("%s")) | select(.state == "COMMENTED") | select((.body // "") | contains("%s") | not) | .id' "$MARKER" "$SUPERSEDED_NOTE")
+mapfile -t commented_ids < <(
+  gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+    --jq "$edit_filter"
+)
+
+if (( ${#commented_ids[@]} > 0 )); then
+  echo "Marking ${#commented_ids[@]} prior otto-reviewer COMMENT review(s) superseded."
+  superseded_body=$(printf '%s\n%s' "$MARKER" "$SUPERSEDED_NOTE")
+  for review_id in "${commented_ids[@]}"; do
+    [[ -z "$review_id" ]] && continue
+    gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id" \
+      --method PUT \
+      -f body="$superseded_body" \
+      >/dev/null || echo "::warning::Failed to update commented review #$review_id"
+  done
+else
+  echo "No prior otto-reviewer COMMENT reviews to mark superseded."
 fi
 
 # 2) Resolve prior inline-comment threads tagged with our marker. Review
