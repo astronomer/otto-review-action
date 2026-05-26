@@ -76,6 +76,49 @@ verdict_json="$(python3 "$ACTION_PATH/scripts/filter-comments.py" \
   /tmp/otto-review/diff.capped.patch \
   <<<"$verdict_json")"
 
+# Drop any new inline comment whose {file, line} matches an existing
+# unresolved+non-outdated otto-reviewer thread. dismiss-stale.sh resolves
+# outdated threads upstream; threads anchored to unchanged code stay open as
+# the canonical record of a still-unaddressed finding. Posting a new comment
+# at the same anchor would create a parallel thread for the same issue.
+if ! occupied=$(gh api graphql \
+    -f owner="${GITHUB_REPOSITORY%%/*}" \
+    -f repo="${GITHUB_REPOSITORY##*/}" \
+    -F pr="$PR_NUMBER" \
+    -f query='
+      query($owner: String!, $repo: String!, $pr: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $pr) {
+            reviewThreads(first: 100) {
+              nodes {
+                isResolved
+                isOutdated
+                comments(first: 1) { nodes { path, line, body } }
+              }
+            }
+          }
+        }
+      }' \
+    --jq '
+      [.data.repository.pullRequest.reviewThreads.nodes[]
+        | select(.isResolved == false and .isOutdated == false and ((.comments.nodes[0].body? // "") | contains("<!-- otto-reviewer -->")))
+        | {path: .comments.nodes[0].path, line: .comments.nodes[0].line}]' 2>/tmp/otto-review/dedup-err); then
+  echo "::warning::Failed to fetch existing threads for dedup; proceeding without dedup:"
+  cat /tmp/otto-review/dedup-err >&2
+  occupied='[]'
+fi
+
+before_count=$(jq '(.comments // []) | length' <<<"$verdict_json")
+verdict_json=$(jq --argjson occupied "$occupied" '
+  .comments = ((.comments // []) | map(. as $c
+    | select($occupied | map(.path == $c.file and .line == $c.line) | any | not)))
+' <<<"$verdict_json")
+after_count=$(jq '(.comments // []) | length' <<<"$verdict_json")
+suppressed=$((before_count - after_count))
+if (( suppressed > 0 )); then
+  echo "Suppressed $suppressed new inline comment(s) duplicating an open otto-reviewer thread."
+fi
+
 # Build the inline comment payloads. When `suggestion` is set, append a fenced
 # ```suggestion block so reviewers can apply it as a one-click commit.
 # Multi-line ranges need start_line < line; single-line comments omit start_line.
