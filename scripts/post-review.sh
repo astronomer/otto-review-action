@@ -24,6 +24,11 @@ set -euo pipefail
 : "${ACTION_PATH:?}"
 DRY_RUN="${DRY_RUN:-false}"
 
+# Hidden marker stamped on every review body and inline comment so future runs
+# of this action can identify its own prior output (e.g. to dismiss stale
+# reviews or resolve resolved threads).
+MARKER='<!-- otto-reviewer -->'
+
 step_output() {
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"
@@ -74,7 +79,7 @@ verdict_json="$(python3 "$ACTION_PATH/scripts/filter-comments.py" \
 # Build the inline comment payloads. When `suggestion` is set, append a fenced
 # ```suggestion block so reviewers can apply it as a one-click commit.
 # Multi-line ranges need start_line < line; single-line comments omit start_line.
-inline_comments=$(jq -c --argjson changed "$changed_csv" '
+inline_comments=$(jq -c --argjson changed "$changed_csv" --arg marker "$MARKER" '
   [(.comments // [])[]
     | select(.file != null and .file != "" and .line != null and (.file | IN($changed[])))
     | . as $c
@@ -82,10 +87,11 @@ inline_comments=$(jq -c --argjson changed "$changed_csv" '
         path: $c.file,
         line: $c.line,
         body: (
-          if ($c.suggestion // "") != ""
-          then ($c.body // "") + "\n\n```suggestion\n" + $c.suggestion + "\n```"
-          else ($c.body // "")
-          end
+          $marker + "\n" +
+          (if ($c.suggestion // "") != ""
+           then ($c.body // "") + "\n\n```suggestion\n" + $c.suggestion + "\n```"
+           else ($c.body // "")
+           end)
         )
       }
     + (if ($c.start_line // null) != null and $c.start_line < $c.line
@@ -108,8 +114,10 @@ else
   event="COMMENT"
 fi
 
-# Body. One line summary, one paragraph reasoning, optional dry-run footer.
+# Body. Hidden marker, one line summary, one paragraph reasoning, optional
+# dry-run footer.
 {
+  echo "$MARKER"
   if [[ -n "$summary" ]]; then echo "$summary"; echo; fi
   if [[ -n "$reasoning" ]]; then echo "$reasoning"; echo; fi
   echo "_verdict: \`$verdict\` · inline: \`$inline_count\`_"
