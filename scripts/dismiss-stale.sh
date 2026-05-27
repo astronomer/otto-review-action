@@ -1,27 +1,38 @@
 #!/usr/bin/env bash
-# Dismiss prior APPROVED / CHANGES_REQUESTED reviews posted by this action
-# on the same PR so stale approvals can't carry forward and stale change
-# requests don't keep blocking merge. Identification uses the hidden marker
-# that post-review.sh stamps into every body it writes.
+# Clean up prior reviews posted by this action on the same PR.
 #
-# Prior COMMENTED reviews are intentionally left untouched — GitHub displays
-# an "Outdated" label on any review whose commit_id no longer matches the PR
-# head, so editing the body would just obscure the original verdict.
+# Two steps, both identified by the hidden marker that post-review.sh stamps
+# into every body it writes:
 #
-# Inline review thread resolution is NOT handled here either — that's the
-# reviewer agent's job via the `resolved_thread_ids` field in its verdict,
-# applied by post-review.sh after the new review is posted.
+# 1. Dismiss prior APPROVED / CHANGES_REQUESTED reviews so stale approvals
+#    can't carry forward and stale change requests don't keep blocking merge.
+#    minimizeComment alone won't help here — a minimized APPROVE still counts
+#    as an approval.
+# 2. Minimize ALL prior marker-tagged reviews as OUTDATED via the
+#    minimizeComment GraphQL mutation. This collapses them in the timeline
+#    with GitHub's native "Outdated" rendering — same UX as
+#    astronomer/otto's claude-review setup.
+#
+# Inline review thread resolution is NOT handled here — that's the reviewer
+# agent's job via the `resolved_thread_ids` field in its verdict, applied by
+# post-review.sh after the new review is posted.
 #
 # Required env:
 #   GH_TOKEN          - github token with pull-requests:write
 #   GITHUB_REPOSITORY - owner/repo (auto-set by Actions runner)
 #   PR_NUMBER         - PR number being reviewed
+# Optional env:
+#   RESOLVE_TOKEN     - PAT/App token used for the minimizeComment mutation
+#                       when the default GITHUB_TOKEN can't (similar to the
+#                       resolveReviewThread limitation). Falls back to
+#                       GH_TOKEN; failures surface as warnings, not errors.
 
 set -euo pipefail
 
 : "${GH_TOKEN:?}"
 : "${PR_NUMBER:?}"
 : "${GITHUB_REPOSITORY:?}"
+RESOLVE_TOKEN="${RESOLVE_TOKEN:-}"
 
 MARKER='<!-- otto-reviewer -->'
 
@@ -50,12 +61,37 @@ else
   echo "No prior otto-reviewer reviews to dismiss."
 fi
 
-# Prior COMMENTED reviews are intentionally left alone. GitHub's UI displays
-# an "Outdated" label next to any review whose commit_id no longer matches
-# the PR head, so no body editing is needed — and the heavy-handed banner +
-# <details> rewrite obscured the original verdict text. The marker is still
-# stamped at post time so future runs can identify the action's reviews.
-#
+# 2) Minimize all prior marker-tagged reviews as OUTDATED so they collapse
+#    in the timeline with GitHub's native "Outdated" label. minimizeComment
+#    works on PullRequestReview node IDs and is idempotent (re-minimizing an
+#    already-minimized review is a no-op). The default GITHUB_TOKEN sometimes
+#    can't call this mutation — same "Resource not accessible by integration"
+#    case as resolveReviewThread — so we prefer RESOLVE_TOKEN when set and
+#    surface the API error on failure rather than swallowing it.
+minimize_filter=$(printf '.[] | select((.body // "") | contains("%s")) | .node_id' "$MARKER")
+mapfile -t review_node_ids < <(
+  gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+    --jq "$minimize_filter"
+)
+
+if (( ${#review_node_ids[@]} > 0 )); then
+  echo "Minimizing ${#review_node_ids[@]} prior otto-reviewer review(s) as OUTDATED."
+  minimize_token="${RESOLVE_TOKEN:-$GH_TOKEN}"
+  for nid in "${review_node_ids[@]}"; do
+    [[ -z "$nid" ]] && continue
+    if ! out=$(GH_TOKEN="$minimize_token" gh api graphql -F id="$nid" -f query='
+        mutation($id: ID!) {
+          minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {
+            minimizedComment { isMinimized }
+          }
+        }' 2>&1); then
+      echo "::warning::Failed to minimize review $nid: $out"
+    fi
+  done
+else
+  echo "No prior otto-reviewer reviews to minimize."
+fi
+
 # Inline-comment thread resolution lives in post-review.sh: the reviewer
 # agent identifies threads its diff addresses via the verdict's
 # `resolved_thread_ids` field, and post-review.sh resolves exactly those.
