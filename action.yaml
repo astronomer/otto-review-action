@@ -213,7 +213,6 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-        RESOLVE_TOKEN: ${{ inputs.resolve-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: bash "$GITHUB_ACTION_PATH/scripts/dismiss-stale.sh"
 
