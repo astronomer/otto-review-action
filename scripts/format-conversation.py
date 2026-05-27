@@ -83,9 +83,9 @@ def render(data: dict[str, Any]) -> str:
         lines.append("## Inline review threads")
         lines.append("")
         for t in threads:
-            # The thread ID is the GraphQL node ID. The reviewer persona uses
-            # it to tell the action which prior threads this diff resolves —
-            # see `resolved_thread_ids` in the reviewer schema.
+            # GraphQL node ID — the reviewer persona is instructed to put
+            # these IDs into `resolved_thread_ids` when the diff fixes the
+            # concern. post-review.sh feeds that list into resolveReviewThread.
             thread_id = t.get("id") or ""
             path = t.get("path") or ""
             # `line` is null for outdated threads (the line no longer exists in
@@ -104,8 +104,8 @@ def render(data: dict[str, Any]) -> str:
             )
             lines.append(
                 f'<thread id="{_attr(thread_id)}" path="{_attr(path)}" '
-                f'line="{line}" resolved="{resolved}" outdated="{outdated}"'
-                f'{extra_attr}>'
+                f'line="{line}" resolved="{resolved}" '
+                f'outdated="{outdated}"{extra_attr}>'
             )
             for c in replies:
                 lines.append(
