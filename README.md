@@ -41,6 +41,7 @@ jobs:
 | `astro-domain` | `astronomer.io` | Astronomer domain. Override for non-prod environments (e.g. `astronomer-dev.io`). |
 | `astro-organization` | env `ASTRO_ORGANIZATION` | Astronomer organization ID for gateway routing. |
 | `github-token` | `${{ github.token }}` | Token used to read the PR and post the review. |
+| `resolve-token` | `""` | Optional token used to resolve prior review threads that Otto's verdict flags as addressed (`resolved_thread_ids`). The default `GITHUB_TOKEN` cannot call `resolveReviewThread` even with `pull-requests: write` (returns `Resource not accessible by integration`). Supply a PAT or GitHub App installation token with `pull_requests:write` to apply the resolutions. When empty, the step warns and skips. |
 | `astro-cli-version` | `""` (latest) | Astro CLI version installed at the start of the run. Otto is bundled with the CLI and auto-updates independently; this action requires Otto >= 0.1.8 (the release that introduced the `reviewer` persona). The verify step fails loud if the running Otto is older. |
 | `model` | `""` (persona's default tier) | Model identifier passed to Otto via `--model`. Empty uses the model the reviewer persona's tier maps to. |
 | `max-diff-lines` | `50000` | Diffs longer than this are truncated. Truncation is itself a signal not to auto-approve. |
@@ -54,6 +55,7 @@ jobs:
 | `verdict` | Otto's verdict: `approve`, `comment`, or `request_changes`. Empty if Otto did not produce a parseable response. |
 | `summary` | Otto's one-sentence summary of the PR. |
 | `comment-count` | Number of inline comments Otto produced. |
+| `resolved-thread-count` | Number of prior review threads Otto flagged as addressed by this diff. The action resolves each (requires `resolve-token`). |
 
 ## What it does
 

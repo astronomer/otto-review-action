@@ -48,6 +48,7 @@ gh api graphql \
           reviewThreads(first: 100) {
             totalCount
             nodes {
+              id
               isResolved
               isOutdated
               path

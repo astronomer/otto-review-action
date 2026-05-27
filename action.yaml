@@ -21,6 +21,10 @@ inputs:
     required: false
     default: ${{ github.token }}
     description: "GitHub token used to read PR metadata and post the review. Defaults to the workflow's GITHUB_TOKEN."
+  resolve-token:
+    required: false
+    default: ""
+    description: "Optional token used for the resolveReviewThread GraphQL mutation. After posting a new review, the action resolves any prior threads the reviewer agent flagged as addressed (verdict.resolved_thread_ids). The default GITHUB_TOKEN cannot call this mutation — it returns 'Resource not accessible by integration' even with pull-requests:write — so without an override here those resolutions are skipped with a warning. Provide a PAT or GitHub App installation token with pull_requests:write to apply them. The token is only used for thread resolution; review posting still goes through 'github-token'."
   astro-cli-version:
     required: false
     default: ""
@@ -51,6 +55,9 @@ outputs:
   comment-count:
     description: "Number of inline review comments Otto produced."
     value: ${{ steps.post-review.outputs.comment-count }}
+  resolved-thread-count:
+    description: "Number of prior review threads Otto flagged as addressed (verdict.resolved_thread_ids). The action attempts to resolve each — see 'resolve-token' for the token requirement."
+    value: ${{ steps.post-review.outputs.resolved-thread-count }}
 
 runs:
   using: "composite"
@@ -197,11 +204,24 @@ runs:
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-otto.sh"
 
+    - name: Dismiss stale otto-reviewer reviews
+      # Dismiss / supersede prior top-level reviews this action posted on the
+      # same PR, identified by the hidden marker in their body. Runs before
+      # the new review is posted so the timeline only shows the freshest
+      # verdict. Inline-comment thread resolution is handled in the Post
+      # review step, driven by the agent's verdict.
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/dismiss-stale.sh"
+
     - name: Post review
       id: post-review
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        RESOLVE_TOKEN: ${{ inputs.resolve-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
