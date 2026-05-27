@@ -152,7 +152,7 @@ post_review() {
     --input /tmp/otto-review/review-payload.json
 }
 
-if ! post_review 2>/tmp/otto-review/api-err; then
+if ! post_review > /tmp/otto-review/post-response.json 2>/tmp/otto-review/api-err; then
   echo "::warning::Review API call failed; retrying without inline comments and falling back to bullet list in the body."
   cat /tmp/otto-review/api-err >&2
   if [[ "$inline_count" -gt 0 ]]; then
@@ -174,8 +174,12 @@ if ! post_review 2>/tmp/otto-review/api-err; then
         --rawfile body /tmp/otto-review/review-body.md \
         '{event: $event, body: $body, commit_id: $sha}' \
         > /tmp/otto-review/review-payload.json
-  post_review
+  post_review > /tmp/otto-review/post-response.json
 fi
+
+# Database ID of the just-posted review. Used downstream so the
+# selective-minimize step doesn't accidentally collapse the new verdict.
+new_review_db_id=$(jq -r '.id // empty' /tmp/otto-review/post-response.json 2>/dev/null || echo "")
 
 step_output verdict "$verdict"
 step_output summary "$summary"
@@ -204,5 +208,84 @@ if (( addressed_count > 0 )); then
         echo "::warning::Failed to resolve thread $thread_id: $out"
       fi
     done
+  fi
+fi
+
+# Selectively minimize prior marker-tagged reviews. A prior review is
+# minimized as OUTDATED only when every inline review thread it started has
+# settled — i.e., is resolved (the agent or a human marked it done) or is
+# outdated (GitHub moved the anchor when the line changed). Reviews with at
+# least one still-open, still-anchored finding stay loud in the timeline as
+# a beacon that something raised earlier is still unaddressed. This is what
+# gives resolveReviewThread / resolved_thread_ids visible weight: resolving
+# the last open thread on a prior review flips its parent loud → collapsed.
+state_query='
+  query($owner: String!, $repo: String!, $pr: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $pr) {
+        reviews(first: 100) {
+          nodes { id databaseId body isMinimized }
+        }
+        reviewThreads(first: 100) {
+          nodes {
+            isResolved
+            isOutdated
+            comments(first: 1) {
+              nodes { pullRequestReview { databaseId } }
+            }
+          }
+        }
+      }
+    }
+  }'
+
+if ! state=$(gh api graphql \
+    -f owner="${GITHUB_REPOSITORY%%/*}" \
+    -f repo="${GITHUB_REPOSITORY##*/}" \
+    -F pr="$PR_NUMBER" \
+    -f query="$state_query" 2>/tmp/otto-review/minimize-err); then
+  echo "::warning::Failed to fetch PR state for selective minimization; skipping:"
+  cat /tmp/otto-review/minimize-err >&2
+else
+  # For each marker-tagged review (excluding the one we just posted), find
+  # the threads where this review authored the first comment. If that set is
+  # empty (the review had no inline findings) or every thread in it is
+  # settled, the review is eligible to minimize.
+  mapfile -t to_minimize < <(
+    jq -r --arg marker '<!-- otto-reviewer -->' \
+          --arg new_id "${new_review_db_id:-}" '
+      .data.repository.pullRequest as $pr
+      | ($pr.reviewThreads.nodes
+         | map({
+             review_db_id: (.comments.nodes[0].pullRequestReview.databaseId // null),
+             settled: (.isResolved or .isOutdated),
+           })) as $threads
+      | $pr.reviews.nodes
+      | map(select((.body // "") | contains($marker)))
+      | map(select(.isMinimized == false))
+      | map(select((.databaseId | tostring) != $new_id))
+      | map(. as $r
+            | ($threads | map(select(.review_db_id == $r.databaseId))) as $owned
+            | select(($owned | length) == 0 or ($owned | all(.settled))))
+      | .[].id
+    ' <<<"$state"
+  )
+
+  if (( ${#to_minimize[@]} > 0 )); then
+    echo "Minimizing ${#to_minimize[@]} prior otto-reviewer review(s) whose findings are all settled."
+    minimize_token="${RESOLVE_TOKEN:-$GH_TOKEN}"
+    for nid in "${to_minimize[@]}"; do
+      [[ -z "$nid" ]] && continue
+      if ! out=$(GH_TOKEN="$minimize_token" gh api graphql -F id="$nid" -f query='
+        mutation($id: ID!) {
+          minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {
+            minimizedComment { isMinimized }
+          }
+        }' 2>&1); then
+        echo "::warning::Failed to minimize review $nid: $out"
+      fi
+    done
+  else
+    echo "No prior otto-reviewer reviews eligible to minimize (open findings keep their parent reviews loud)."
   fi
 fi
