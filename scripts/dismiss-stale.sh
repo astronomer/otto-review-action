@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Dismiss / supersede prior top-level reviews posted by this action on the
-# same PR. Identification uses the hidden marker that post-review.sh stamps
-# into every body it writes.
+# Dismiss prior APPROVED / CHANGES_REQUESTED reviews posted by this action
+# on the same PR so stale approvals can't carry forward and stale change
+# requests don't keep blocking merge. Identification uses the hidden marker
+# that post-review.sh stamps into every body it writes.
 #
-# Inline review thread resolution is NOT handled here — that's now the
+# Prior COMMENTED reviews are intentionally left untouched — GitHub displays
+# an "Outdated" label on any review whose commit_id no longer matches the PR
+# head, so editing the body would just obscure the original verdict.
+#
+# Inline review thread resolution is NOT handled here either — that's the
 # reviewer agent's job via the `resolved_thread_ids` field in its verdict,
 # applied by post-review.sh after the new review is posted.
 #
@@ -19,8 +24,6 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?}"
 
 MARKER='<!-- otto-reviewer -->'
-
-OUTDATED_BANNER='> **Outdated** — superseded by a newer otto-review-action run.'
 
 # 1) Dismiss prior APPROVED / CHANGES_REQUESTED reviews tagged with our marker.
 #    GitHub's dismiss-review endpoint only accepts those two states; calling it
@@ -47,41 +50,12 @@ else
   echo "No prior otto-reviewer reviews to dismiss."
 fi
 
-# 2) Mark prior COMMENTED reviews as outdated. GitHub offers no dismissal for
-#    COMMENT reviews and no native "mark outdated" primitive for top-level
-#    review bodies. Closest non-destructive option: prepend an Outdated banner
-#    and collapse the original verdict under a <details> block via the
-#    "Update a review" endpoint. The marker stays in place so future runs
-#    still recognize the review as ours; we skip any review whose body
-#    already contains the banner so re-runs are idempotent.
-edit_filter=$(printf '.[] | select((.body // "") | contains("%s")) | select(.state == "COMMENTED") | select((.body // "") | contains("%s") | not) | .id' "$MARKER" "$OUTDATED_BANNER")
-mapfile -t commented_ids < <(
-  gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
-    --jq "$edit_filter"
-)
-
-if (( ${#commented_ids[@]} > 0 )); then
-  echo "Marking ${#commented_ids[@]} prior otto-reviewer COMMENT review(s) outdated."
-  for review_id in "${commented_ids[@]}"; do
-    [[ -z "$review_id" ]] && continue
-    # Fetch the current body, strip its leading <!-- otto-reviewer --> marker
-    # line (we add a fresh one), and wrap the rest in a <details> block so
-    # the prior verdict text stays available but collapsed.
-    current_body=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id" \
-      --jq '.body // ""' 2>/dev/null || echo "")
-    stripped_body=$(printf '%s' "$current_body" | awk -v m="$MARKER" 'NR==1 && $0==m {next} {print}')
-    new_body=$(printf '%s\n%s\n\n<details>\n<summary>Previous verdict</summary>\n\n%s\n\n</details>\n' \
-      "$MARKER" "$OUTDATED_BANNER" "$stripped_body")
-    if ! out=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews/$review_id" \
-        --method PUT \
-        -f body="$new_body" 2>&1); then
-      echo "::warning::Failed to mark commented review #$review_id outdated: $out"
-    fi
-  done
-else
-  echo "No prior otto-reviewer COMMENT reviews to mark outdated."
-fi
-
-# Inline-comment thread resolution lives in post-review.sh now: the reviewer
+# Prior COMMENTED reviews are intentionally left alone. GitHub's UI displays
+# an "Outdated" label next to any review whose commit_id no longer matches
+# the PR head, so no body editing is needed — and the heavy-handed banner +
+# <details> rewrite obscured the original verdict text. The marker is still
+# stamped at post time so future runs can identify the action's reviews.
+#
+# Inline-comment thread resolution lives in post-review.sh: the reviewer
 # agent identifies threads its diff addresses via the verdict's
 # `resolved_thread_ids` field, and post-review.sh resolves exactly those.
