@@ -6,10 +6,17 @@ on:
     paths:
       - 'e2e/**'
       - '.github/workflows/e2e-otto-review.yaml'
+  issue_comment:
+    types: [created]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review."
+        required: true
+        type: string
 
 concurrency:
-  group: e2e-otto-review-${{ github.event.pull_request.number || github.ref }}
+  group: e2e-otto-review-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -22,16 +29,36 @@ env:
 
 jobs:
   review:
+    # Trigger matrix:
+    # - pull_request: same-repo non-draft PRs touching e2e/** or this workflow.
+    # - issue_comment: a `/otto-review` comment from someone with write access
+    #   (OWNER / MEMBER / COLLABORATOR) on a PR thread.
+    # - workflow_dispatch: an explicit run from the Actions UI / `gh workflow
+    #   run`, with the PR number passed as input.
     if: >-
-      github.event_name == 'workflow_dispatch' || (
+      (github.event_name == 'pull_request' &&
         github.event.pull_request.draft == false &&
-        github.event.pull_request.head.repo.full_name == github.repository
-      )
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        startsWith(github.event.comment.body, '/otto-review') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Check out the PR head so the action code under test matches the PR
+      # being reviewed. For pull_request that's the synchronize ref; for
+      # issue_comment / workflow_dispatch we resolve refs/pull/<n>/head.
       - uses: actions/checkout@v6
+        with:
+          ref: >-
+            ${{
+              github.event.pull_request.head.sha ||
+              format('refs/pull/{0}/head', github.event.issue.number || inputs.pr_number)
+            }}
       - name: Otto Review
         uses: ./
         with:
           dry-run: "true"
+          pr-number: ${{ github.event.issue.number || inputs.pr_number }}
