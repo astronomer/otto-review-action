@@ -114,17 +114,13 @@ else
   event="COMMENT"
 fi
 
-# Body. Hidden marker, one line summary, one paragraph reasoning, optional
-# dry-run footer.
+# Body. Hidden marker, heading, one line summary, one paragraph reasoning.
 {
   echo "$MARKER"
+  echo "### Otto Review"
+  echo
   if [[ -n "$summary" ]]; then echo "$summary"; echo; fi
   if [[ -n "$reasoning" ]]; then echo "$reasoning"; echo; fi
-  echo "_verdict: \`$verdict\` · inline: \`$inline_count\`_"
-  if [[ "$DRY_RUN" == "true" ]]; then
-    echo
-    echo "_dry-run: review event downgraded to COMMENT_"
-  fi
 } > /tmp/otto-review/review-body.md
 
 echo "verdict=$verdict event=$event inline=$inline_count dry_run=$DRY_RUN"
