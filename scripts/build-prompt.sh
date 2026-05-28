@@ -63,6 +63,8 @@ python3 "$ACTION_PATH/scripts/format-conversation.py" \
   echo
   echo "When reviewing, use the <pr-conversation> section to avoid restating points already raised. Skip threads with resolved=\"true\" or outdated=\"true\" unless the current diff has regressed them; for open threads, either address them in your review or note that they remain unresolved."
   echo
+  echo "Begin your \`reasoning\` field with exactly one line in the format \`**Score: N/100** — <one-sentence justification>\` followed by a blank line, then your normal reasoning paragraph. Use this rubric: 0 means the worst possible PR code; 100 means the highest quality, with no bugs or performance issues, ready to be merged immediately and run in production at scale. Weight bugs, correctness, and security risks heaviest; weight style and minor nits lightest. The score must be consistent with your verdict — request_changes should not exceed ~60, comment typically falls 50–85, approve typically 80+."
+  echo
   echo "Submit your final answer via the submit_final_answer tool using the schema you were given."
 } > /tmp/otto-review/user-prompt.txt
 
