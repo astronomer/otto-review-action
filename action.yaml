@@ -122,6 +122,23 @@ runs:
           echo "head-sha=$HEAD_SHA"
         } >> "$GITHUB_OUTPUT"
 
+    - name: React to trigger comment
+      # When triggered by a /otto-review comment, leave a 👀 reaction so the
+      # commenter knows the bot picked up the trigger before the slower
+      # install + review steps run. Best-effort: a reaction failure must not
+      # block the review itself.
+      if: github.event_name == 'issue_comment'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        COMMENT_ID: ${{ github.event.comment.id }}
+      run: |
+        gh api -X POST \
+          "/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" \
+          -f content=eyes \
+          --silent \
+          || echo "::warning::Failed to react to trigger comment $COMMENT_ID"
+
     - name: Checkout PR head
       uses: actions/checkout@v6
       with:
