@@ -21,6 +21,10 @@ inputs:
     required: false
     default: ${{ github.token }}
     description: "GitHub token used to read PR metadata and post the review. Defaults to the workflow's GITHUB_TOKEN."
+  resolve-token:
+    required: false
+    default: ""
+    description: "Optional token used for the resolveReviewThread GraphQL mutation. After posting a new review, the action resolves any prior threads the reviewer agent flagged as addressed (verdict.resolved_thread_ids). The default GITHUB_TOKEN cannot call this mutation — it returns 'Resource not accessible by integration' even with pull-requests:write — so without an override here those resolutions are skipped with a warning. Provide a PAT or GitHub App installation token with pull_requests:write to apply them. The token is only used for thread resolution; review posting still goes through 'github-token'."
   astro-cli-version:
     required: false
     default: ""
@@ -41,6 +45,10 @@ inputs:
     required: false
     default: "false"
     description: "If 'true', the review event is downgraded to COMMENT regardless of Otto's verdict. Use this while you're tuning the prompt."
+  pr-number:
+    required: false
+    default: ""
+    description: "PR number to review. Only consulted for events that don't carry a PR payload (issue_comment, workflow_dispatch, repository_dispatch). For pull_request / pull_request_target events the PR is read from the event payload and this input is ignored."
 outputs:
   verdict:
     description: "Otto's verdict ('approve', 'comment', or 'request_changes'). Empty when Otto failed to produce a parseable response."
@@ -51,28 +59,73 @@ outputs:
   comment-count:
     description: "Number of inline review comments Otto produced."
     value: ${{ steps.post-review.outputs.comment-count }}
+  resolved-thread-count:
+    description: "Number of prior review threads Otto flagged as addressed (verdict.resolved_thread_ids). The action attempts to resolve each — see 'resolve-token' for the token requirement."
+    value: ${{ steps.post-review.outputs.resolved-thread-count }}
 
 runs:
   using: "composite"
   steps:
-    - name: Validate workflow event
+    - name: Resolve PR context
+      id: resolve
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+        EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+        EVENT_ISSUE_IS_PR: ${{ github.event.issue.pull_request != null }}
       run: |
-        # The action only runs on pull_request / pull_request_target events. The
-        # PR number, base SHA, and head SHA all come from the event payload, and
-        # we'd rather fail loud than post a review against the wrong commits.
+        set -euo pipefail
+        # pull_request* events carry the PR coordinates in the payload. Other
+        # supported events (issue_comment on a PR, workflow_dispatch,
+        # repository_dispatch) need an explicit PR number; we resolve the
+        # base/head SHAs from the API. Anything else is rejected loud — we'd
+        # rather fail than post a review against the wrong commits.
         case "$GITHUB_EVENT_NAME" in
-          pull_request|pull_request_target) ;;
+          pull_request|pull_request_target)
+            PR_NUMBER="$EVENT_PR_NUMBER"
+            BASE_SHA="$EVENT_BASE_SHA"
+            HEAD_SHA="$EVENT_HEAD_SHA"
+            ;;
+          issue_comment)
+            if [[ "$EVENT_ISSUE_IS_PR" != "true" ]]; then
+              echo "::error::issue_comment event received but the issue is not a pull request."
+              exit 1
+            fi
+            PR_NUMBER="${INPUT_PR_NUMBER:-$EVENT_ISSUE_NUMBER}"
+            ;;
+          workflow_dispatch|repository_dispatch)
+            if [[ -z "$INPUT_PR_NUMBER" ]]; then
+              echo "::error::'pr-number' input is required when otto-review-action runs on '$GITHUB_EVENT_NAME'."
+              exit 1
+            fi
+            PR_NUMBER="$INPUT_PR_NUMBER"
+            ;;
           *)
-            echo "::error::otto-review-action only supports 'pull_request' and 'pull_request_target' events. Got: $GITHUB_EVENT_NAME"
+            echo "::error::otto-review-action does not support the '$GITHUB_EVENT_NAME' event."
             exit 1
             ;;
         esac
 
+        if [[ -z "${BASE_SHA:-}" || -z "${HEAD_SHA:-}" ]]; then
+          json=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json baseRefOid,headRefOid)
+          BASE_SHA=$(jq -r '.baseRefOid' <<<"$json")
+          HEAD_SHA=$(jq -r '.headRefOid' <<<"$json")
+        fi
+
+        {
+          echo "pr-number=$PR_NUMBER"
+          echo "base-sha=$BASE_SHA"
+          echo "head-sha=$HEAD_SHA"
+        } >> "$GITHUB_OUTPUT"
+
     - name: Checkout PR head
       uses: actions/checkout@v6
       with:
-        ref: ${{ github.event.pull_request.head.sha }}
+        ref: ${{ steps.resolve.outputs.head-sha }}
         # Full history so `git diff base..head` works locally without an extra
         # fetch. PRs from forks are checked out by SHA; the workflow's
         # permissions decide whether secrets are available, not this step.
@@ -162,15 +215,17 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_NUMBER: ${{ steps.resolve.outputs.pr-number }}
+        BASE_SHA: ${{ steps.resolve.outputs.base-sha }}
+        HEAD_SHA: ${{ steps.resolve.outputs.head-sha }}
         MAX_DIFF_LINES: ${{ inputs.max-diff-lines }}
       run: bash "$GITHUB_ACTION_PATH/scripts/gather-context.sh"
 
     - name: Build prompt
       id: prompt
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: bash "$GITHUB_ACTION_PATH/scripts/build-prompt.sh"
 
     - name: Run Otto review
@@ -195,14 +250,27 @@ runs:
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-otto.sh"
 
+    - name: Dismiss stale otto-reviewer reviews
+      # Dismiss / supersede prior top-level reviews this action posted on the
+      # same PR, identified by the hidden marker in their body. Runs before
+      # the new review is posted so the timeline only shows the freshest
+      # verdict. Inline-comment thread resolution is handled in the Post
+      # review step, driven by the agent's verdict.
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ steps.resolve.outputs.pr-number }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/dismiss-stale.sh"
+
     - name: Post review
       id: post-review
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        RESOLVE_TOKEN: ${{ inputs.resolve-token }}
+        PR_NUMBER: ${{ steps.resolve.outputs.pr-number }}
+        BASE_SHA: ${{ steps.resolve.outputs.base-sha }}
+        HEAD_SHA: ${{ steps.resolve.outputs.head-sha }}
         VERDICT_FILE: /tmp/otto-review/verdict-raw.txt
         ACTION_PATH: ${{ github.action_path }}
         DRY_RUN: ${{ inputs.dry-run }}
