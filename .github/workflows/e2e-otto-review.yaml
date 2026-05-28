@@ -41,15 +41,36 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
-        startsWith(github.event.comment.body, '/otto-review') &&
+        (github.event.comment.body == '/otto-review' ||
+          startsWith(github.event.comment.body, '/otto-review ')) &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Reject fork PRs reached via issue_comment / workflow_dispatch before we
+      # check out the PR head. Without this, a maintainer's `/otto-review` (or
+      # any dispatch) on a fork PR would pull fork-author code into `./` and
+      # then `uses: ./` would run it with `pull-requests: write` and the Astro
+      # secrets in env — the textbook pwn-request pattern. pull_request flows
+      # are already gated on head.repo at the job's `if:`.
+      - name: Verify PR head is in this repo
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          is_cross=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json isCrossRepository --jq '.isCrossRepository')
+          if [[ "$is_cross" != "false" ]]; then
+            echo "::error::Refusing to review PR #$PR_NUMBER — its head is in a different repository. Slash-command and workflow_dispatch only support same-repo PRs."
+            exit 1
+          fi
       # Check out the PR head so the action code under test matches the PR
-      # being reviewed. For pull_request that's the synchronize ref; for
-      # issue_comment / workflow_dispatch we resolve refs/pull/<n>/head.
+      # being reviewed. For pull_request the head SHA comes from the event
+      # payload; for issue_comment / workflow_dispatch we resolve
+      # refs/pull/<n>/head.
       - uses: actions/checkout@v6
         with:
           ref: >-
