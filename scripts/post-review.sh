@@ -154,14 +154,18 @@ fi
 #    skip any whose rendered body exactly matches a still-open Otto comment
 #    from a prior run, so persisting findings aren't duplicated on every push.
 # ---------------------------------------------------------------------------
-# Bodies of Otto's currently-open inline threads (marker present, unresolved).
+# Bodies of Otto's currently-open inline threads (marker present, unresolved),
+# plus a thread-node-id -> top-comment REST id map (used by the resolve step's
+# reaction fallback). `id` is the node id Otto puts in resolved_thread_ids;
+# `databaseId` is the REST id needed to react to / edit the comment.
 open_otto_bodies='[]'
+thread_comment_ids='{}'
 threads_query='
   query($owner: String!, $repo: String!, $pr: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $pr) {
         reviewThreads(first: 100) {
-          nodes { isResolved comments(first: 1) { nodes { body } } }
+          nodes { id isResolved comments(first: 1) { nodes { databaseId body } } }
         }
       }
     }
@@ -174,6 +178,10 @@ if threads_json=$(gh api graphql \
       | select(.isResolved == false)
       | (.comments.nodes[0].body // "")
       | select(contains($m))]' <<<"$threads_json")
+  thread_comment_ids=$(jq -c '
+    [.data.repository.pullRequest.reviewThreads.nodes[]
+      | {(.id): (.comments.nodes[0].databaseId // null)}]
+    | add // {}' <<<"$threads_json")
 else
   # GraphQL is how we learn isResolved (so we dedup only against OPEN threads).
   # If it fails, don't post unfiltered — that would duplicate every open finding
@@ -260,7 +268,24 @@ step_output resolved-thread-count "$addressed_count"
 
 if (( addressed_count > 0 )); then
   if [[ -z "${RESOLVE_TOKEN:-}" ]]; then
-    echo "::warning::Otto marked $addressed_count prior thread(s) addressed, but no 'resolve-token' was provided. The default GITHUB_TOKEN cannot call resolveReviewThread — supply a PAT or GitHub App token via the 'resolve-token' input to apply the resolutions."
+    # No resolve-token: the default GITHUB_TOKEN can't call resolveReviewThread,
+    # so we can't collapse the threads. Leave a 👍 reaction on each addressed
+    # thread's top comment as a lightweight "Otto considers this addressed"
+    # signal. Reactions are idempotent (re-adding the same one is a no-op), so
+    # this is safe to repeat every push without spamming.
+    echo "::warning::Otto marked $addressed_count prior thread(s) addressed, but no 'resolve-token' was provided — the default GITHUB_TOKEN cannot call resolveReviewThread. Adding a 👍 reaction to each as an 'addressed' signal instead; supply a 'resolve-token' (PAT or GitHub App token) to actually resolve them."
+    for thread_id in "${addressed_ids[@]}"; do
+      [[ -z "$thread_id" ]] && continue
+      cid=$(jq -r --arg t "$thread_id" '.[$t] // empty' <<<"$thread_comment_ids")
+      if [[ -z "$cid" ]]; then
+        echo "::warning::Could not map thread $thread_id to a comment id; skipping its reaction."
+        continue
+      fi
+      if ! out=$(gh api "repos/$GITHUB_REPOSITORY/pulls/comments/$cid/reactions" \
+          --method POST -f content=+1 2>&1); then
+        echo "::warning::Failed to add 👍 reaction to comment #$cid: $out"
+      fi
+    done
   else
     echo "Resolving $addressed_count thread(s) marked addressed by the reviewer."
     for thread_id in "${addressed_ids[@]}"; do
