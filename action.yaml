@@ -24,7 +24,7 @@ inputs:
   resolve-token:
     required: false
     default: ""
-    description: "Optional token used for the resolveReviewThread GraphQL mutation. After posting a new review, the action resolves any prior threads the reviewer agent flagged as addressed (verdict.resolved_thread_ids). The default GITHUB_TOKEN cannot call this mutation — it returns 'Resource not accessible by integration' even with pull-requests:write — so without an override here those resolutions are skipped with a warning. Provide a PAT or GitHub App installation token with pull_requests:write to apply them. The token is only used for thread resolution; review posting still goes through 'github-token'."
+    description: "Optional token used to resolve prior review threads that Otto's verdict flags as addressed (`resolved_thread_ids`). The default `GITHUB_TOKEN` cannot call `resolveReviewThread` even with `pull-requests: write` (returns 'Resource not accessible by integration'), so without an override here those resolutions are skipped with a warning. Provide a PAT or GitHub App installation token with `pull_requests:write` to apply them. The token is only used for thread resolution; everything else (sticky comment, inline comments, gating review) goes through 'github-token'."
   astro-cli-version:
     required: false
     default: ""
@@ -57,10 +57,10 @@ outputs:
     description: "Otto's one-sentence summary of the PR."
     value: ${{ steps.post-review.outputs.summary }}
   comment-count:
-    description: "Number of inline review comments Otto produced."
+    description: "Number of inline review comments Otto posted this run (after dedup against still-open prior comments)."
     value: ${{ steps.post-review.outputs.comment-count }}
   resolved-thread-count:
-    description: "Number of prior review threads Otto flagged as addressed (verdict.resolved_thread_ids). The action attempts to resolve each — see 'resolve-token' for the token requirement."
+    description: "Number of prior review threads Otto flagged as addressed (verdict.resolved_thread_ids). The action resolves each — see 'resolve-token' for the token requirement."
     value: ${{ steps.post-review.outputs.resolved-thread-count }}
 
 runs:
@@ -267,20 +267,13 @@ runs:
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-otto.sh"
 
-    - name: Dismiss stale otto-reviewer reviews
-      # Dismiss / supersede prior top-level reviews this action posted on the
-      # same PR, identified by the hidden marker in their body. Runs before
-      # the new review is posted so the timeline only shows the freshest
-      # verdict. Inline-comment thread resolution is handled in the Post
-      # review step, driven by the agent's verdict.
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        PR_NUMBER: ${{ steps.resolve.outputs.pr-number }}
-      run: bash "$GITHUB_ACTION_PATH/scripts/dismiss-stale.sh"
-
     - name: Post review
       id: post-review
+      # Reconciles Otto's footprint on the PR in place: upserts the sticky
+      # summary comment, posts inline findings while skipping ones already open
+      # from a prior run, resolves threads the diff addressed (resolve-token),
+      # and carries the gating verdict in a state-only review reposted only when
+      # the verdict state changes.
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
