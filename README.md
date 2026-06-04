@@ -2,6 +2,8 @@
 
 GitHub Action that runs Astronomer's [Otto](https://www.astronomer.io/product/otto/) data engineering agent against a pull request, posts inline review comments where the code has issues, and offers commit suggestions where a concrete fix is available.
 
+On re-runs (each push), the action **edits its existing footprint in place** rather than re-posting: it keeps one sticky summary comment, updates or leaves its prior inline comments instead of duplicating them, and only re-posts the merge-gating review when the verdict state actually changes.
+
 The review prompt, the read-only tool allowlist, and the verdict output schema are bundled into Otto's `reviewer` persona; this action invokes Otto with `--persona reviewer` and forwards inputs (model, allowed-tools override, etc.) on top.
 
 ## Use this action
@@ -46,7 +48,7 @@ jobs:
 | `model` | `""` (persona's default tier) | Model identifier passed to Otto via `--model`. Empty uses the model the reviewer persona's tier maps to. |
 | `max-diff-lines` | `50000` | Diffs longer than this are truncated. Truncation is itself a signal not to auto-approve. |
 | `allowed-tools` | `""` (persona's allowlist) | Comma-separated tool allowlist passed to Otto. Empty uses the reviewer persona's built-in allowlist (`read, grep, find, ls, bash`). Set this to override with a different list. |
-| `dry-run` | `false` | When `true`, the review event is posted as `COMMENT` regardless of Otto's verdict. |
+| `dry-run` | `false` | When `true`, no merge-gating review is posted regardless of Otto's verdict. The sticky summary comment and inline comments are still posted. |
 
 ## Outputs
 
@@ -54,7 +56,8 @@ jobs:
 | --- | --- |
 | `verdict` | Otto's verdict: `approve`, `comment`, or `request_changes`. Empty if Otto did not produce a parseable response. |
 | `summary` | Otto's one-sentence summary of the PR. |
-| `comment-count` | Number of inline comments Otto produced. |
+| `comment-count` | Number of inline comments Otto posted this run (net-new, after dedup against still-open prior comments). |
+| `finding-count` | Total findings anchored to the diff this run, before dedup. Use this (not `comment-count`) to gate on "does the PR have findings" — `comment-count` is `0` on a push where every finding was already an open comment. |
 | `resolved-thread-count` | Number of prior review threads Otto flagged as addressed by this diff. The action resolves each (requires `resolve-token`). |
 
 ## What it does
@@ -63,9 +66,20 @@ jobs:
 2. Resolves auth inputs and exports `ASTRO_TOKEN` / `ASTRO_DOMAIN` / `ASTRO_ORGANIZATION` for Otto.
 3. Installs the Astro CLI via [`astronomer/setup-astro-cli`](https://github.com/astronomer/setup-astro-cli) and verifies the CLI bundles `astro otto` **and** the `reviewer` persona. Otto is **only** available as part of the Astro CLI; there is no separate Otto binary.
 4. Gathers PR metadata (`gh pr view`), the base..head diff (`gh pr diff`, capped at `max-diff-lines`), and the prior PR conversation (general comments + inline review threads with their resolved/outdated state, fetched via GraphQL).
-5. Writes the metadata + conversation + diff to a sidecar file Otto reads via its `read` tool. Keeps the prompt out of `argv` so large diffs don't trip `ARG_MAX`. The persona is instructed to skip restating points already raised in the conversation, to acknowledge open threads, and to ignore threads marked resolved or outdated unless the diff has regressed them.
+5. Writes the metadata + conversation + diff to a sidecar file Otto reads via its `read` tool. Keeps the prompt out of `argv` so large diffs don't trip `ARG_MAX`. The persona is instructed to skip restating points already raised in the conversation, to flag threads the diff has addressed (`resolved_thread_ids`), and to ignore threads marked resolved or outdated unless the diff has regressed them.
 6. Runs `astro otto --mode json --persona reviewer`. The persona binds the Astro/Airflow review prompt, the read-only tool allowlist, plan-mode permissions, and the verdict output schema; Otto returns a structured verdict by calling the synthetic `submit_final_answer` tool the persona's schema registers.
-7. Parses the verdict, drops any inline comment that doesn't anchor to a file in the diff, and posts a single PR review with the remaining comments. When a comment carries a `suggestion`, the action renders it as a GitHub commit-suggestion block.
+7. Reconciles Otto's footprint on the PR in place (see [Posting model](#posting-model)).
+
+## Posting model
+
+The action edits what it already posted instead of re-posting on every push:
+
+- **Sticky summary comment** — the score / summary / reasoning live in one PR issue comment, identified by a hidden `<!-- otto-reviewer:summary -->` marker. It's edited in place (`PATCH`) on each run, or created once (`POST`).
+- **Inline comments** — findings (`comments`) are posted as standalone review comments. Any whose body exactly matches a still-open Otto comment from a prior run is skipped, so persisting findings aren't duplicated on every push (the persona also avoids restating open threads; this is a mechanical safety net). Comments outside a diff hunk are dropped (GitHub rejects them); `suggestion` renders as a commit-suggestion block.
+- **Resolved threads** — threads Otto flags as addressed (`resolved_thread_ids`) are resolved via `resolveReviewThread` when a `resolve-token` is supplied. Without one (the default `GITHUB_TOKEN` can't resolve threads), the action instead leaves a 👍 reaction on each addressed comment as a lightweight "Otto considers this addressed" signal — idempotent, so it's safe to repeat on every push without spamming.
+- **Merge-gating review** — the verdict (`approve` / `request_changes`) is carried by a minimal state-only review (no inline comments; body points at the sticky comment). It's reposted only when the gating state would change; a `comment` verdict (and `dry-run`) carry no review and clear any active gating review. Prior gating reviews are dismissed when superseded.
+
+Everything except thread resolution runs on the default `GITHUB_TOKEN`.
 
 ## Verdict schema
 
@@ -81,14 +95,17 @@ Otto is constrained to return a JSON object matching the reviewer persona's bund
       "file": "dags/my_dag.py",
       "line": 42,
       "start_line": 40,
+      "severity": "high | medium | low",
       "body": "schedule_interval is deprecated; use schedule.",
       "suggestion": "        schedule=None,"
     }
-  ]
+  ],
+  "resolved_thread_ids": ["PRRT_kw..."]
 }
 ```
 
-`start_line` is optional (omit for a single-line comment). `suggestion` is optional (omit when no concrete fix is being proposed).
+- `comments` are line-anchored findings. `start_line` is optional (omit for a single-line comment); `suggestion` is optional (omit when no concrete fix is proposed). `severity` is per-comment (`high`/`medium`/`low`).
+- `resolved_thread_ids` are the GraphQL node IDs of prior inline review threads this diff substantively addressed; the action resolves each (requires `resolve-token`). Omitted when no prior threads were addressed.
 
 ## Untrusted input
 
