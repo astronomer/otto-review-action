@@ -62,6 +62,7 @@ step_output() {
 step_output verdict ""
 step_output summary ""
 step_output comment-count "0"
+step_output finding-count "0"
 step_output resolved-thread-count "0"
 
 mkdir -p /tmp/otto-review
@@ -114,11 +115,24 @@ verdict_json="$(python3 "$ACTION_PATH/scripts/filter-comments.py" \
 jq -nc --rawfile body /tmp/otto-review/summary-body.md '{body: $body}' \
   > /tmp/otto-review/summary-payload.json
 
-existing_summary_id=$(
+mapfile -t summary_ids < <(
   gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
     --jq ".[] | select((.body // \"\") | contains(\"$SUMMARY_MARKER\")) | .id" \
-    2>/dev/null | head -n1 || true
+    2>/dev/null || true
 )
+existing_summary_id="${summary_ids[0]:-}"
+
+# Self-heal if more than one sticky ever exists (a pre-refactor run, a race, a
+# manual post): update the first and delete the rest so they don't go stale and
+# fork the summary across comments.
+if (( ${#summary_ids[@]} > 1 )); then
+  echo "::warning::Found ${#summary_ids[@]} sticky summary comments; updating #$existing_summary_id and deleting the extras."
+  for extra in "${summary_ids[@]:1}"; do
+    [[ -z "$extra" ]] && continue
+    gh api "repos/$GITHUB_REPOSITORY/issues/comments/$extra" --method DELETE >/dev/null 2>&1 \
+      || echo "::warning::Failed to delete duplicate sticky comment #$extra"
+  done
+fi
 
 if [[ -n "$existing_summary_id" ]]; then
   echo "Updating sticky summary comment #$existing_summary_id in place."
@@ -161,15 +175,29 @@ if threads_json=$(gh api graphql \
       | (.comments.nodes[0].body // "")
       | select(contains($m))]' <<<"$threads_json")
 else
-  echo "::warning::Failed to fetch current review threads; posting without the dedup safety net."
+  # GraphQL is how we learn isResolved (so we dedup only against OPEN threads).
+  # If it fails, don't post unfiltered — that would duplicate every open finding
+  # on the next push. Fall back to the REST review-comments list to build the
+  # baseline from all marker-tagged bodies. This over-dedups slightly (it can't
+  # distinguish resolved from open), but a missed re-post of a regressed finding
+  # is far less bad than duplicating every finding.
+  echo "::warning::reviewThreads GraphQL query failed; falling back to the REST review-comments list to build the dedup baseline (will match against all Otto comments, resolved or not)."
   cat /tmp/otto-review/threads-err >&2
+  if rest_comments=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/comments" 2>/tmp/otto-review/rest-err); then
+    open_otto_bodies=$(jq -c --arg m "$MARKER" \
+      '[.[] | (.body // "") | select(contains($m))]' <<<"$rest_comments")
+  else
+    echo "::warning::REST fallback also failed; posting without the dedup safety net (duplicates possible)."
+    cat /tmp/otto-review/rest-err >&2
+  fi
 fi
 
 # Build the inline payloads (marker + optional ```suggestion fence; side RIGHT;
-# multi-line via start_line/start_side), then drop any whose body already exists
-# as an open Otto comment.
-new_payloads=$(jq -c --argjson changed "$changed_csv" --arg marker "$MARKER" \
-      --arg sha "$HEAD_SHA" --argjson existing "$open_otto_bodies" '
+# multi-line via start_line/start_side). `all_payloads` is every finding that
+# anchors to the diff — the PR's current finding count. `new_payloads` then
+# drops any whose body already exists as an open Otto comment, leaving only
+# what's net-new to post this run.
+all_payloads=$(jq -c --argjson changed "$changed_csv" --arg marker "$MARKER" --arg sha "$HEAD_SHA" '
   [(.comments // [])[]
     | select(.file != null and .file != "" and .line != null and (.file | IN($changed[])))
     | . as $c
@@ -190,8 +218,17 @@ new_payloads=$(jq -c --argjson changed "$changed_csv" --arg marker "$MARKER" \
        else {side: "RIGHT"}
        end)
   ]
-  | map(select(.body as $b | ($existing | index($b)) == null))
 ' <<<"$verdict_json")
+
+# Total findings anchored to the diff, before dedup. Distinct from comment-count
+# (posted this run): a push where every finding was deduped against an open prior
+# comment has finding-count > 0 but comment-count 0 — "findings exist" vs "new
+# findings posted".
+finding_count=$(jq 'length' <<<"$all_payloads")
+step_output finding-count "$finding_count"
+
+new_payloads=$(jq -c --argjson existing "$open_otto_bodies" \
+  'map(select(.body as $b | ($existing | index($b)) == null))' <<<"$all_payloads")
 
 posted_count=0
 while IFS= read -r c; do
@@ -207,7 +244,7 @@ while IFS= read -r c; do
   fi
 done < <(jq -c '.[]' <<<"$new_payloads")
 
-echo "verdict=$verdict posted_inline=$posted_count dry_run=$DRY_RUN"
+echo "verdict=$verdict findings=$finding_count posted_inline=$posted_count dry_run=$DRY_RUN"
 step_output verdict "$verdict"
 step_output summary "$summary"
 step_output comment-count "$posted_count"

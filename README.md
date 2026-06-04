@@ -56,7 +56,8 @@ jobs:
 | --- | --- |
 | `verdict` | Otto's verdict: `approve`, `comment`, or `request_changes`. Empty if Otto did not produce a parseable response. |
 | `summary` | Otto's one-sentence summary of the PR. |
-| `comment-count` | Number of inline comments Otto posted this run (after dedup against still-open prior comments). |
+| `comment-count` | Number of inline comments Otto posted this run (net-new, after dedup against still-open prior comments). |
+| `finding-count` | Total findings anchored to the diff this run, before dedup. Use this (not `comment-count`) to gate on "does the PR have findings" — `comment-count` is `0` on a push where every finding was already an open comment. |
 | `resolved-thread-count` | Number of prior review threads Otto flagged as addressed by this diff. The action resolves each (requires `resolve-token`). |
 
 ## What it does

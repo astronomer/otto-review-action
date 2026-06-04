@@ -57,8 +57,11 @@ outputs:
     description: "Otto's one-sentence summary of the PR."
     value: ${{ steps.post-review.outputs.summary }}
   comment-count:
-    description: "Number of inline review comments Otto posted this run (after dedup against still-open prior comments)."
+    description: "Number of inline review comments Otto posted this run (net-new, after dedup against still-open prior comments)."
     value: ${{ steps.post-review.outputs.comment-count }}
+  finding-count:
+    description: "Total findings anchored to the diff this run, before dedup. Use this (not comment-count) to gate on 'does the PR have findings' — comment-count is 0 on a push where every finding was already an open comment."
+    value: ${{ steps.post-review.outputs.finding-count }}
   resolved-thread-count:
     description: "Number of prior review threads Otto flagged as addressed (verdict.resolved_thread_ids). The action resolves each — see 'resolve-token' for the token requirement."
     value: ${{ steps.post-review.outputs.resolved-thread-count }}
