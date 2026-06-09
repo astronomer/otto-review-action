@@ -215,15 +215,27 @@ runs:
         # `astro --help`. Fail loud if it isn't there — running blind would
         # produce a confusing "no diff posted" outcome instead of an actionable
         # error.
-        if ! "$CLI_PATH" --help 2>&1 | grep -qiE '^\s*otto\b'; then
+        #
+        # Capture the output first rather than piping straight into `grep -q`
+        # (AI-710): `grep -q` exits on first match, closing the pipe while
+        # `astro` is still writing its multi-line help; astro dies with SIGPIPE
+        # (141), and under the composite default `-o pipefail` that 141 becomes
+        # the pipeline's status — `if !` took the error branch even though grep
+        # matched. `|| true` keeps a genuine astro failure from aborting the
+        # step so the actionable message below stays the one the user sees.
+        help_out="$("$CLI_PATH" --help 2>&1 || true)"
+        if ! printf '%s\n' "$help_out" | grep -qiE '^\s*otto\b'; then
           echo "::error::Astro CLI ${CLI_VERSION} at ${CLI_PATH} does not bundle Otto. Otto requires Astro CLI >= 1.42.0. Set the 'astro-cli-version' input to '1.42.0' or newer."
           exit 1
         fi
         # Also check the bundled Otto knows about the `reviewer` persona. The
         # action no longer ships its own system prompt + verdict schema — both
         # come from the persona. An Otto build without it would error out at
-        # runtime; fail here with an actionable message.
-        if ! "$CLI_PATH" otto --help 2>&1 | grep -qE '\breviewer\b'; then
+        # runtime; fail here with an actionable message. Same capture-first
+        # treatment as above (AI-710) — `otto --help` is also long enough to
+        # lose the SIGPIPE/pipefail race against `grep -q`.
+        otto_help_out="$("$CLI_PATH" otto --help 2>&1 || true)"
+        if ! printf '%s\n' "$otto_help_out" | grep -qE '\breviewer\b'; then
           echo "::error::Astro CLI ${CLI_VERSION} bundles Otto but not the 'reviewer' persona. Update to a newer Otto build (Otto auto-updates on first 'astro otto' invocation; clear ~/.astro/bin/otto if it appears stuck)."
           exit 1
         fi
