@@ -44,11 +44,12 @@ jobs:
 | `astro-organization` | env `ASTRO_ORGANIZATION` | Astronomer organization ID for gateway routing. |
 | `github-token` | `${{ github.token }}` | Token used to read the PR and post the review. |
 | `resolve-token` | `""` | Optional token used to resolve prior review threads that Otto's verdict flags as addressed (`resolved_thread_ids`). The default `GITHUB_TOKEN` cannot call `resolveReviewThread` even with `pull-requests: write` (returns `Resource not accessible by integration`). Supply a PAT or GitHub App installation token with `pull_requests:write` to apply the resolutions. When empty, the step warns and skips. |
-| `astro-cli-version` | `""` (latest) | Astro CLI version installed at the start of the run. Otto is bundled with the CLI and auto-updates independently; this action requires Otto >= 0.1.8 (the release that introduced the `reviewer` persona). The verify step fails loud if the running Otto is older. |
+| `astro-cli-version` | `""` (latest) | Astro CLI version installed at the start of the run. Otto is bundled with the CLI and auto-updates independently; this action requires an Otto build that ships the `reviewer` persona. The verify step fails loud if the persona is missing. |
 | `model` | `""` (persona's default tier) | Model identifier passed to Otto via `--model`. Empty uses the model the reviewer persona's tier maps to. |
 | `max-diff-lines` | `50000` | Diffs longer than this are truncated. Truncation is itself a signal not to auto-approve. |
 | `allowed-tools` | `""` (persona's allowlist) | Comma-separated tool allowlist passed to Otto. Empty uses the reviewer persona's built-in allowlist (`read, grep, find, ls, bash`). Set this to override with a different list. |
 | `dry-run` | `false` | When `true`, no merge-gating review is posted regardless of Otto's verdict. The sticky summary comment and inline comments are still posted. |
+| `pr-number` | `""` | PR number to review. Only consulted for events that don't carry a PR payload (`issue_comment`, `workflow_dispatch`, `repository_dispatch`). For `pull_request` / `pull_request_target` events the PR is read from the event payload and this input is ignored. |
 
 ## Outputs
 
