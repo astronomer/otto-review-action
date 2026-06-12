@@ -42,9 +42,17 @@ def parse_diff_valid_lines(diff_text: str) -> dict[str, set[int]]:
     new_line = 0
 
     for raw in diff_text.splitlines():
-        if raw.startswith("+++ b/"):
-            current_file = raw[6:]
-            valid.setdefault(current_file, set())
+        if raw.startswith("+++ "):
+            target = raw[4:]
+            if target.startswith("b/"):
+                current_file = target[2:]
+                valid.setdefault(current_file, set())
+            else:
+                # `+++ /dev/null` marks a deleted file — there is no right side
+                # to anchor a comment to. Clear current_file so the deletion's
+                # hunk/content lines (and the `+++ /dev/null` line itself, which
+                # starts with `+`) aren't miscounted against the previous file.
+                current_file = None
         elif raw.startswith("@@ "):
             m = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw)
             if m:
