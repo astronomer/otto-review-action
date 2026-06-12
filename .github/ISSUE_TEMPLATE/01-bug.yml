@@ -1,0 +1,61 @@
+---
+name: Bug Report
+description: File a bug report.
+title: "[Bug] "
+labels: ["bug", "triage-needed"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please do not use
+        this form to report security vulnerabilities — see
+        [SECURITY.md](https://github.com/astronomer/otto-review-action/blob/main/SECURITY.md).
+  - type: input
+    id: action-version
+    attributes:
+      label: Action version
+      description: >
+        What ref of otto-review-action are you using (the `uses:` tag/branch/SHA)?
+        Try the latest release before filing.
+      placeholder: e.g. v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: astro-cli-version
+    attributes:
+      label: Astro CLI / Otto version
+      description: >
+        The Astro CLI version installed by the run (shown in the "Verify Otto"
+        step log). Leave blank if you didn't pin `astro-cli-version`.
+      placeholder: e.g. 1.42.0
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        Steps to reproduce, ideally including the relevant part of your workflow
+        YAML (with secrets redacted).
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        Paste the relevant Action run logs. Redact tokens and any private code.
+      render: shell
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/astronomer/otto-review-action/blob/main/CODE_OF_CONDUCT.md)
+          required: true

@@ -143,4 +143,4 @@ Breaking changes bump the major (`v0` → `v1`) and start a new moving major tag
 
 ## License
 
-Apache 2.0 with the Commons Clause Restriction. See [LICENSE](./LICENSE).
+Apache 2.0. See [LICENSE](./LICENSE).
