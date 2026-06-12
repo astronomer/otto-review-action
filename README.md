@@ -9,7 +9,7 @@ The review prompt, the read-only tool allowlist, and the verdict output schema a
 ## Use this action
 
 1. Add a workflow that runs on `pull_request`. The action checks out the PR head, installs Otto, runs the review, and posts the result.
-2. Provide an Astronomer API token via `secrets.ASTRO_API_TOKEN` and the org ID via `secrets.ASTRO_ORGANIZATION` (or pass them as inputs). Both are required to authenticate Otto against the Astronomer Gateway.
+2. Provide an Astro API token via `secrets.ASTRO_API_TOKEN` and the org ID via `secrets.ASTRO_ORGANIZATION` (or pass them as inputs). The Astro API token only needs the organization member permission.
 3. Grant `pull-requests: write` on the workflow so the action can post the review.
 
 ```yaml
@@ -39,8 +39,7 @@ jobs:
 
 | Name | Default | Description |
 | --- | --- | --- |
-| `astro-api-token` | env `ASTRO_API_TOKEN` | Astronomer API token. |
-| `astro-domain` | `astronomer.io` | Astronomer domain. Override for non-prod environments (e.g. `astronomer-dev.io`). |
+| `astro-api-token` | env `ASTRO_API_TOKEN` | Astro API token. Only needs org membership permissions. |
 | `astro-organization` | env `ASTRO_ORGANIZATION` | Astronomer organization ID for gateway routing. |
 | `github-token` | `${{ github.token }}` | Token used to read the PR and post the review. |
 | `resolve-token` | `""` | Optional token used to resolve prior review threads that Otto's verdict flags as addressed (`resolved_thread_ids`). The default `GITHUB_TOKEN` cannot call `resolveReviewThread` even with `pull-requests: write` (returns `Resource not accessible by integration`). Supply a PAT or GitHub App installation token with `pull_requests:write` to apply the resolutions. When empty, the step warns and skips. |
@@ -50,6 +49,8 @@ jobs:
 | `allowed-tools` | `""` (persona's allowlist) | Comma-separated tool allowlist passed to Otto. Empty uses the reviewer persona's built-in allowlist (`read, grep, find, ls, bash`). Set this to override with a different list. |
 | `dry-run` | `false` | When `true`, no merge-gating review is posted regardless of Otto's verdict. The sticky summary comment and inline comments are still posted. |
 | `pr-number` | `""` | PR number to review. Only consulted for events that don't carry a PR payload (`issue_comment`, `workflow_dispatch`, `repository_dispatch`). For `pull_request` / `pull_request_target` events the PR is read from the event payload and this input is ignored. |
+| `astro-domain` | `astronomer.io` | Astronomer domain. Override for non-prod environments (e.g. `astronomer-dev.io`). Only useful for internal testing. |
+
 
 ## Outputs
 
