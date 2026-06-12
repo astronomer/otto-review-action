@@ -1,0 +1,13 @@
+---
+version: 2
+updates:
+  # Keep the actions this composite action pins (actions/checkout,
+  # setup-astro-cli, action-yamllint) up to date.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    reviewers:
+      - "astronomer/agents-approvers"
