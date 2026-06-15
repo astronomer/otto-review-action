@@ -2,7 +2,7 @@
 # Reconcile Otto's footprint on the PR in place, rather than re-posting a full
 # review on every push. Given Otto's verdict JSON, this script:
 #
-#   1. Upserts a single sticky issue comment that carries the score / summary /
+#   1. Upserts a single sticky issue comment that carries the severity tally / summary /
 #      reasoning — edited in place across pushes (PATCH), created once (POST).
 #   2. Posts inline findings (`comments`) as standalone PR review comments,
 #      skipping any whose body exactly matches a still-open Otto comment from a
@@ -356,7 +356,7 @@ else
     echo "$MARKER"
     echo "### Otto Review"
     echo
-    echo "See Otto's review summary comment on this PR for the score, reasoning, and inline notes."
+    echo "See Otto's review summary comment on this PR for the severity tally, reasoning, and inline notes."
   } > /tmp/otto-review/review-body.md
   jq -nc --arg event "$desired_event" --arg sha "$HEAD_SHA" \
         --rawfile body /tmp/otto-review/review-body.md \
