@@ -163,6 +163,13 @@ runs:
         # Otto reads ASTRO_TOKEN / ASTRO_DOMAIN / ASTRO_ORGANIZATION from env.
         # Accept either the action input or a pre-set env var so the simple
         # `env: { ASTRO_API_TOKEN: ... }` workflow form keeps working.
+        #
+        # Two distinct auth gates read two different var names: Otto uses
+        # ASTRO_TOKEN for gateway auth, but the bundled Astro CLI's login
+        # preflight (which `astro otto` runs first) reads ASTRO_API_TOKEN. We
+        # export both below so the input-only path authenticates the same as
+        # the `env: ASTRO_API_TOKEN` path — otherwise the preflight fails fast
+        # with a bare "not logged in" before any work happens (issue #23).
         TOKEN="${INPUT_ASTRO_API_TOKEN:-${ASTRO_API_TOKEN:-}}"
         DOMAIN="${INPUT_ASTRO_DOMAIN:-${ASTRO_DOMAIN:-astronomer.io}}"
         ORG="${INPUT_ASTRO_ORGANIZATION:-${ASTRO_ORGANIZATION:-}}"
@@ -184,6 +191,7 @@ runs:
         # step output for traceability (domain/org are not secret).
         {
           echo "ASTRO_TOKEN=$TOKEN"
+          echo "ASTRO_API_TOKEN=$TOKEN"
           echo "ASTRO_DOMAIN=$DOMAIN"
           echo "ASTRO_ORGANIZATION=$ORG"
         } >> "$GITHUB_ENV"
@@ -264,8 +272,10 @@ runs:
       id: otto
       shell: bash
       env:
-        # Otto reads these for gateway auth (set by the auth step above).
+        # Otto reads ASTRO_TOKEN for gateway auth; the bundled Astro CLI's
+        # login preflight reads ASTRO_API_TOKEN. Both are set by the auth step.
         ASTRO_TOKEN: ${{ env.ASTRO_TOKEN }}
+        ASTRO_API_TOKEN: ${{ env.ASTRO_API_TOKEN }}
         ASTRO_DOMAIN: ${{ env.ASTRO_DOMAIN }}
         ASTRO_ORGANIZATION: ${{ env.ASTRO_ORGANIZATION }}
         # Override Otto's default LLM-gateway attribution headers so review
