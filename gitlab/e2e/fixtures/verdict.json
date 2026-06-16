@@ -1,0 +1,21 @@
+{
+  "verdict": "request_changes",
+  "summary": "ETL DAG uses a deprecated schedule param and references an undefined variable.",
+  "reasoning": "**1 critical, 1 major issue found**\n\nThe load task references `cleaned_data`, which is never defined.",
+  "comments": [
+    {
+      "file": "dags/buggy_etl_dag.py",
+      "line": 2,
+      "severity": "medium",
+      "body": "**[Major]** `schedule_interval` is deprecated; use `schedule`.",
+      "suggestion": "with DAG('etl', schedule=None) as dag:"
+    },
+    {
+      "file": "dags/buggy_etl_dag.py",
+      "line": 5,
+      "severity": "high",
+      "body": "**[Critical]** `cleaned_data` is undefined; did you mean `cleaned`?"
+    }
+  ],
+  "resolved_thread_ids": ["disc-human-resolved"]
+}

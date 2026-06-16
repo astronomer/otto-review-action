@@ -1,0 +1,22 @@
+name: GitLab Adapter Test
+
+# The GitLab adapter (gather -> normalize -> filter -> post) is exercised
+# end-to-end with the network stubbed, so it needs no live GitLab instance and
+# can run as an ordinary Linux job here. Guards the GitLab adapter and the
+# shared neutral core against regressions.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'gitlab/**'
+      - 'core/**'
+      - '.github/workflows/gitlab-adapter-test.yaml'
+
+jobs:
+  offline-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run offline GitLab e2e
+        run: bash gitlab/e2e/run.sh
