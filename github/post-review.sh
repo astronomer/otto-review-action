@@ -97,7 +97,7 @@ changed_csv=$(printf '%s\n' "${changed_files[@]}" | jq -R . | jq -sc .)
 
 # Filter `comments` to lines that fall inside a diff hunk; GitHub's
 # review-comment API 422s on anchors outside any hunk even when the line exists.
-verdict_json="$(python3 "$ACTION_PATH/scripts/filter-comments.py" \
+verdict_json="$(python3 "$ACTION_PATH/core/filter-comments.py" \
   /tmp/otto-review/diff.capped.patch \
   <<<"$verdict_json")"
 

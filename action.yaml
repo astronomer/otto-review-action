@@ -259,14 +259,14 @@ runs:
         BASE_SHA: ${{ steps.resolve.outputs.base-sha }}
         HEAD_SHA: ${{ steps.resolve.outputs.head-sha }}
         MAX_DIFF_LINES: ${{ inputs.max-diff-lines }}
-      run: bash "$GITHUB_ACTION_PATH/scripts/gather-context.sh"
+      run: bash "$GITHUB_ACTION_PATH/github/gather-context.sh"
 
     - name: Build prompt
       id: prompt
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-      run: bash "$GITHUB_ACTION_PATH/scripts/build-prompt.sh"
+      run: bash "$GITHUB_ACTION_PATH/core/build-prompt.sh"
 
     - name: Run Otto review
       id: otto
@@ -290,7 +290,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         INPUT_MODEL: ${{ inputs.model }}
         INPUT_ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
-      run: bash "$GITHUB_ACTION_PATH/scripts/run-otto.sh"
+      run: bash "$GITHUB_ACTION_PATH/core/run-otto.sh"
 
     - name: Post review
       id: post-review
@@ -309,4 +309,4 @@ runs:
         VERDICT_FILE: /tmp/otto-review/verdict-raw.txt
         ACTION_PATH: ${{ github.action_path }}
         DRY_RUN: ${{ inputs.dry-run }}
-      run: bash "$GITHUB_ACTION_PATH/scripts/post-review.sh"
+      run: bash "$GITHUB_ACTION_PATH/github/post-review.sh"

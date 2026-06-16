@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'e2e/**'
+      - 'action.yaml'
+      - 'core/**'
+      - 'github/**'
       - '.github/workflows/e2e-otto-review.yaml'
   issue_comment:
     types: [created]

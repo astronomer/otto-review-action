@@ -18,7 +18,7 @@ truncated="$(cat /tmp/otto-review/diff-truncated.txt 2>/dev/null || echo false)"
 
 # Render the PR conversation JSON to markdown. Kept separate from the fetch in
 # gather-context.sh so pr-conversation.json persists as a debugging artifact.
-python3 "$ACTION_PATH/scripts/format-conversation.py" \
+python3 "$ACTION_PATH/core/format-conversation.py" \
   /tmp/otto-review/pr-conversation.json \
   > /tmp/otto-review/pr-conversation.md
 

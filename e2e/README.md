@@ -26,7 +26,7 @@ e2e/
 
 ## How a test run works
 
-1. A contributor opens a PR that modifies a file under `e2e/**` (typically a DAG) or any of the action's own source files (`action.yaml`, `scripts/**`).
+1. A contributor opens a PR that modifies a file under `e2e/**` (typically a DAG) or any of the action's own source files (`action.yaml`, `core/**`, `github/**`).
 2. The path filter in [`e2e-otto-review.yaml`](../.github/workflows/e2e-otto-review.yaml) triggers the workflow.
 3. The workflow does an `actions/checkout` so the action's manifest is on the runner, then calls `uses: ./` — meaning the action source from the PR branch is what runs, not a published tag. This is what makes the e2e useful for iterating on the action itself.
 4. The action checks out the PR head, installs the Astro CLI, and runs `astro otto …` against the PR diff.
@@ -47,7 +47,7 @@ If you're testing against a non-prod environment, also pass `astro-domain: astro
 
 ### Iterate on the action
 
-1. Edit the action source (`action.yaml` or anything under `scripts/`). The review prompt and verdict schema now live in Otto's `reviewer` persona — iterate on those upstream and roll forward the Astro CLI pin if you need a newer prompt.
+1. Edit the action source (`action.yaml` or anything under `core/` or `github/`). The review prompt and verdict schema now live in Otto's `reviewer` persona — iterate on those upstream and roll forward the Astro CLI pin if you need a newer prompt.
 2. Optionally tweak a DAG under `astro-project/dags/` to give Otto something to comment on.
 3. Push a branch and open a PR to `main`. The workflow runs and posts the review on your own PR.
 4. Iterate by pushing more commits — the `concurrency` block cancels the in-flight review for the previous SHA so you only see comments for the latest push.
