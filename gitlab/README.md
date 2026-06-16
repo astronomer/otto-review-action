@@ -7,11 +7,11 @@ platform-neutral core in [`../core/`](../core).
 
 ## How it runs
 
-GitLab has no composite-action runner, so the adapter ships as a CI template
-([`otto-review.gitlab-ci.yml`](./otto-review.gitlab-ci.yml)) plus the scripts it
-invokes. The job clones this repo at a pinned ref (the GitLab analog of
-`uses: ...@v0`), installs the Astro CLI, and runs [`run-review.sh`](./run-review.sh),
-which orchestrates:
+GitLab has no composite-action runner, so the adapter ships as a **public Docker
+image** (`ghcr.io/astronomer/otto-review`) that bakes the Astro CLI and these
+scripts, plus a CI template ([`otto-review.gitlab-ci.yml`](./otto-review.gitlab-ci.yml))
+that runs it. The job invokes [`run-review.sh`](./run-review.sh), which
+orchestrates:
 
 ```
 gather-context.sh  ->  ../core/build-prompt.sh  ->  ../core/run-otto.sh  ->  post-review.sh
@@ -19,7 +19,9 @@ gather-context.sh  ->  ../core/build-prompt.sh  ->  ../core/run-otto.sh  ->  pos
 ```
 
 The adapter talks to the GitLab REST API v4 with `curl` + `jq` (no `glab`, no
-`python-gitlab`), keeping the repo dependency-free.
+`python-gitlab`), keeping the repo dependency-free. (`run-review.sh` also installs
+the Astro CLI if it isn't already present, so the scripts can run outside the
+image for local testing — see [e2e/README.md](./e2e/README.md).)
 
 ## Quick start
 
@@ -28,7 +30,7 @@ The adapter talks to the GitLab REST API v4 with `curl` + `jq` (no `glab`, no
 2. Add masked CI/CD variables: `ASTRO_API_TOKEN`, `ASTRO_ORGANIZATION`, and
    `GITLAB_TOKEN` (a PAT or project access token with the **`api`** scope —
    `CI_JOB_TOKEN` is not sufficient for the notes/discussions API).
-3. Pin `OTTO_REVIEW_REF` to a released tag.
+3. Pin the image tag: `:v0` tracks the latest `v0.x`; use `:vX.Y.Z` to pin exactly.
 
 See the [root README](../README.md#run-on-gitlab) for the full variable list.
 
@@ -36,8 +38,8 @@ See the [root README](../README.md#run-on-gitlab) for the full variable list.
 
 | File | Role |
 | --- | --- |
-| `otto-review.gitlab-ci.yml` | Consumer-facing CI template (clone + run). |
-| `run-review.sh` | Orchestrator: auth, install/verify Astro CLI, then gather→build→run→post. |
+| `otto-review.gitlab-ci.yml` | Consumer-facing CI template (`image:` + run). |
+| `run-review.sh` | Orchestrator: auth, verify (or install) Astro CLI, then gather→build→run→post. |
 | `gather-context.sh` | MR metadata, diff, and discussions → the `/tmp/otto-review/*` sidecar files. |
 | `normalize-conversation.py` | GitLab discussions → the GitHub-GraphQL JSON shape `core/format-conversation.py` expects. |
 | `post-review.sh` | Sticky summary note, inline diff notes (dedup), thread resolution. |

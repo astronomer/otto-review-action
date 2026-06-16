@@ -1,0 +1,11 @@
+# Keep the image lean: only core/ and gitlab/ are COPYed, but trim the build
+# context so unrelated changes don't bust the layer cache.
+.git
+.github
+e2e
+docs
+gitlab/e2e
+**/__pycache__
+**/*.md
+action.yaml
+LICENSE

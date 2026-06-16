@@ -18,7 +18,7 @@
 #   OTTO_ALLOWED_TOOLS  - optional --allowed-tools override
 #   OTTO_MAX_DIFF_LINES - diff cap (default 50000)
 #   OTTO_DRY_RUN        - "true" => sticky summary only, no inline notes
-#   OTTO_REVIEW_REF     - the pinned ref of this repo (for gateway attribution)
+#   OTTO_REVIEW_VERSION - image version, for gateway attribution (baked into the image)
 #
 # Plus GitLab predefined: CI_API_V4_URL, CI_MERGE_REQUEST_PROJECT_ID,
 # CI_MERGE_REQUEST_IID.
@@ -57,8 +57,10 @@ export INPUT_ALLOWED_TOOLS="${OTTO_ALLOWED_TOOLS:-}"
 export VERDICT_FILE="/tmp/otto-review/verdict-raw.txt"
 
 # Gateway attribution so review traffic bills as this action, not bare "otto".
+# OTTO_REVIEW_VERSION is baked into the image at build time; fall back to CI refs
+# when running the scripts outside the image (local/dev).
 export OTTO_X_ASTRO_CLIENT_IDENTIFIER="otto-review-action"
-export OTTO_X_ASTRO_CLIENT_VERSION="${OTTO_REVIEW_REF:-${CI_COMMIT_REF_NAME:-unknown}}"
+export OTTO_X_ASTRO_CLIENT_VERSION="${OTTO_REVIEW_VERSION:-${CI_COMMIT_REF_NAME:-unknown}}"
 
 # ---------------------------------------------------------------------------
 # 2. Install the Astro CLI (which bundles Otto). Otto is ONLY available via the

@@ -39,20 +39,42 @@ or `core/**`. It needs `bash`, `python3`, and `jq` — no live GitLab.
 
 ## Manual e2e (against a real MR)
 
-The offline harness cannot exercise the live GitLab API, the Astro CLI install,
-or real `position` acceptance. To validate those end-to-end:
+The offline harness cannot exercise the live GitLab API, the Astro CLI, or real
+inline-`position` acceptance. Validate those against a throwaway GitLab project
+whose repo holds the buggy DAGs from
+[`../../e2e/astro-project`](../../e2e/astro-project) (the same fixtures the GitHub
+e2e uses); open an MR that modifies a DAG.
 
-1. Create a throwaway GitLab project and push the buggy DAGs from
-   [`../../e2e/astro-project`](../../e2e/astro-project) (the same fixtures the
-   GitHub e2e uses).
-2. Add the `otto_review` job from
-   [`../otto-review.gitlab-ci.yml`](../otto-review.gitlab-ci.yml) to the
-   project's `.gitlab-ci.yml`, with `OTTO_REVIEW_REF` pointed at your branch.
-3. Set the CI/CD variables: `ASTRO_API_TOKEN`, `ASTRO_ORGANIZATION`,
-   `GITLAB_TOKEN` (`api` scope).
-4. Open an MR that modifies a DAG. Confirm:
-   - a sticky summary note appears and is **edited in place** on a second push
-     (not duplicated),
-   - inline notes land on the correct lines,
-   - a finding with a `suggestion` renders as a committable GitLab suggestion,
-   - a thread Otto flags as addressed is collapsed (resolved).
+### Local run (pre-merge — no published image needed)
+
+`run-review.sh` installs the Astro CLI if it isn't present, so you can drive the
+adapter straight from a checkout of your branch, before any image exists. The
+single most valuable check is **inline `position` acceptance**, which only the
+live API can confirm.
+
+```bash
+export CI_API_V4_URL="https://gitlab.com/api/v4"
+export CI_MERGE_REQUEST_PROJECT_ID="<numeric project id>"
+export CI_MERGE_REQUEST_IID="<mr iid>"
+export GITLAB_TOKEN="<PAT with api scope>"
+export ASTRO_API_TOKEN="..." ASTRO_ORGANIZATION="..."
+export OTTO_DRY_RUN="true"          # first pass: sticky summary only
+bash gitlab/run-review.sh
+```
+
+### Full CI run (needs a published image)
+
+Because the consumer template uses `image: ghcr.io/astronomer/otto-review:...`,
+the image must exist first. Seed a pre-release with the `Release image` workflow
+(workflow_dispatch, tag `v0.0.1-rc1`), make the GHCR package public, then add the
+`otto_review` job from [`../otto-review.gitlab-ci.yml`](../otto-review.gitlab-ci.yml)
+to the project's `.gitlab-ci.yml` with the image pinned to `:v0.0.1-rc1` and the
+CI/CD variables `ASTRO_API_TOKEN`, `ASTRO_ORGANIZATION`, `GITLAB_TOKEN` set.
+
+### Either way, confirm
+
+- a sticky summary note appears and is **edited in place** on a second push (not
+  duplicated),
+- inline notes land on the correct lines,
+- a finding with a `suggestion` renders as a committable GitLab suggestion,
+- a thread Otto flags as addressed is collapsed (resolved).
