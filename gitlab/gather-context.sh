@@ -131,7 +131,13 @@ if [[ "$disc_http" -ge 400 || "$disc_http" == "000" ]]; then
   disc_total=0
 else
   disc_total="$(grep -i '^x-total:' "$hdr" | tr -d '\r' | awk '{print $2}')"
-  disc_total="${disc_total:-$(jq 'length' /tmp/otto-review/gitlab-discussions.json)}"
+  if [[ -z "$disc_total" ]]; then
+    # No X-Total header: fall back to the fetched count. If that count is exactly
+    # the page cap, assume there are more so the normalizer still flags truncation
+    # (otherwise a full page with no header reads as "complete").
+    fetched="$(jq 'length' /tmp/otto-review/gitlab-discussions.json)"
+    if [[ "$fetched" -eq 100 ]]; then disc_total=$((fetched + 1)); else disc_total="$fetched"; fi
+  fi
 fi
 rm -f "$hdr"
 

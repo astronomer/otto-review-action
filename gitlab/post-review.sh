@@ -44,14 +44,17 @@ warn() { echo "otto-review(gitlab post) WARNING: $*" >&2; }
 fail() { echo "otto-review(gitlab post) ERROR: $*" >&2; exit 1; }
 
 API_OUT="$(mktemp)"
-# api_call METHOD URL [json_body_file] -> echoes HTTP code; response body in $API_OUT
+# api_call METHOD URL [json_body_file] -> echoes HTTP code; response body in $API_OUT.
+# On a curl transport error (DNS, connection, etc.) echo 999 — a value that fails
+# every caller's `< 400` / `>= 400` check the same way a real error status would,
+# so a transport failure is never mistaken for a 2xx.
 api_call() {
   local method="$1" url="$2" data="${3:-}"
   local args=(-sS -w '%{http_code}' -o "$API_OUT" -X "$method" -H "PRIVATE-TOKEN: $GITLAB_TOKEN")
   if [[ -n "$data" ]]; then
     args+=(-H "Content-Type: application/json" --data-binary @"$data")
   fi
-  curl "${args[@]}" "$url" || echo 000
+  curl "${args[@]}" "$url" || echo 999
 }
 
 step_output() {
@@ -115,11 +118,21 @@ verdict_json="$(python3 "$ACTION_PATH/core/filter-comments.py" \
 jq -nc --rawfile body /tmp/otto-review/summary-body.md '{body: $body}' \
   > /tmp/otto-review/summary-payload.json
 
+# Walk every page of notes, not just the first: on a busy MR the sticky summary
+# (posted on the first run) falls off page 1, and a single-page lookup would
+# conclude there is none and POST a fresh one every run. Bounded so a misbehaving
+# API can't loop forever.
 summary_ids=()
-while IFS= read -r _sid; do summary_ids+=("$_sid"); done < <(
-  api_call GET "$API/notes?per_page=100" >/dev/null
-  jq -r --arg m "$SUMMARY_MARKER" '.[]? | select((.body // "") | contains($m)) | .id' < "$API_OUT" 2>/dev/null || true
-)
+page=1
+while (( page <= 50 )); do
+  api_call GET "$API/notes?per_page=100&page=$page" >/dev/null
+  cnt=$(jq 'length' < "$API_OUT" 2>/dev/null || echo 0)
+  (( cnt == 0 )) && break
+  while IFS= read -r _sid; do summary_ids+=("$_sid"); done < <(
+    jq -r --arg m "$SUMMARY_MARKER" '.[]? | select((.body // "") | contains($m)) | .id' < "$API_OUT" 2>/dev/null || true)
+  (( cnt < 100 )) && break
+  page=$((page + 1))
+done
 existing_summary_id="${summary_ids[0]:-}"
 
 # Self-heal duplicate stickies (pre-refactor run, race, manual post): keep the

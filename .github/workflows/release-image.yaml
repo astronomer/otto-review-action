@@ -62,6 +62,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/astronomer/otto-review
+          # latest=auto (the default, stated explicitly): emit `latest` for a
+          # non-prerelease semver, and skip it for prereleases like v0.0.1-rc1.
+          flavor: latest=auto
           tags: |
             type=semver,pattern=v{{version}},value=${{ steps.version.outputs.value }}
             type=semver,pattern=v{{major}}.{{minor}},value=${{ steps.version.outputs.value }}
