@@ -35,6 +35,48 @@ jobs:
         uses: astronomer/otto-review-action@v0.1.0
 ```
 
+## Run on GitLab
+
+Otto can also review GitLab **Merge Requests**. GitLab has no composite-action
+runner, so instead of `uses:` you add a CI job that fetches the review scripts
+(by cloning this repo at a pinned ref — the GitLab analog of `@v0`), installs
+the Astro CLI, and runs the review. See [`gitlab/`](./gitlab) for the adapter and
+[`gitlab/otto-review.gitlab-ci.yml`](./gitlab/otto-review.gitlab-ci.yml) for the
+template to copy into your project's `.gitlab-ci.yml`:
+
+```yaml
+otto_review:
+  image: python:3.12-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    OTTO_REVIEW_REF: "v0"   # pin to a released tag
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends curl jq git ca-certificates
+  script:
+    - git clone --depth 1 --branch "$OTTO_REVIEW_REF" https://github.com/astronomer/otto-review-action.git /tmp/otto-review-action
+    - bash /tmp/otto-review-action/gitlab/run-review.sh
+```
+
+Add these masked **CI/CD variables** (Settings → CI/CD → Variables):
+
+| Variable | Description |
+| --- | --- |
+| `ASTRO_API_TOKEN` | Astronomer API token (organization member permission). |
+| `ASTRO_ORGANIZATION` | Astronomer organization ID for gateway routing. |
+| `GITLAB_TOKEN` | A PAT or project access token with the **`api`** scope, used to post the review. `CI_JOB_TOKEN` is **not** sufficient for the notes/discussions API. |
+
+Optional variables: `ASTRO_DOMAIN` (default `astronomer.io`), `ASTRO_CLI_VERSION`,
+`OTTO_MODEL`, `OTTO_ALLOWED_TOOLS`, `OTTO_MAX_DIFF_LINES` (default `50000`),
+`OTTO_DRY_RUN` (`true` posts only the sticky summary).
+
+**Differences from the GitHub action:** the GitLab adapter is *sticky-note-only*
+— it posts a sticky summary note plus inline notes and resolves addressed
+threads, but never approves or blocks the MR (GitLab has no native "request
+changes" review event). Because the job clones this repo at runtime, the repo
+must be readable by your runners; Otto itself stays gateway-gated, so a public
+clone grants no free usage.
+
 ## Inputs
 
 | Name | Default | Description |

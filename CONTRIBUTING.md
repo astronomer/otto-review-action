@@ -22,6 +22,9 @@ this repo is the orchestration around it:
   (`filter-comments.py`).
 - `github/` — the GitHub SCM adapter: `gather-context.sh` (PR context via `gh`) and
   `post-review.sh` (reconcile the review on the PR).
+- `gitlab/` — the GitLab SCM adapter: a `.gitlab-ci.yml` template plus the gather /
+  normalize / post scripts that run Otto against a Merge Request. See
+  [gitlab/README.md](./gitlab/README.md).
 - `e2e/` — an end-to-end test bed (a minimal Astro project plus seeded DAGs) that
   the `e2e-otto-review` workflow runs the action against. See
   [e2e/README.md](./e2e/README.md).
@@ -48,7 +51,7 @@ config in [`.yamllint`](./.yamllint); CI runs it via the `Lint YAML` workflow.
 Run it locally before pushing:
 
 ```bash
-yamllint action.yaml .github/workflows
+yamllint action.yaml .github/workflows gitlab/otto-review.gitlab-ci.yml
 ```
 
 ## Testing a change
