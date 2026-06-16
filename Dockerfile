@@ -30,3 +30,9 @@ RUN if [ -n "$ASTRO_CLI_VERSION" ]; then \
 
 COPY core/   /opt/otto-review/core/
 COPY gitlab/ /opt/otto-review/gitlab/
+
+# Default command: run a review. GitLab CI overrides this with the job's
+# `script:`; a bare `docker run` runs the review and fails loud on missing env
+# rather than dropping into a shell. No ENTRYPOINT, so the job's shell and
+# explicit `docker run <cmd>` (e.g. the smoke test) still work unchanged.
+CMD ["bash", "/opt/otto-review/gitlab/run-review.sh"]
