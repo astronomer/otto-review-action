@@ -67,6 +67,8 @@ python3 "$ACTION_PATH/core/format-conversation.py" \
   echo
   echo "Begin your \`reasoning\` field with exactly one line tallying the findings by severity, in the format \`**N critical, N major, N minor issue(s) found**\` (omit a level with a count of zero, e.g. \`**2 critical, 1 minor issue found**\`; write \`**No issues found**\` when there are none), followed by a blank line, then your normal reasoning paragraph. The tally must match the severity labels on your inline comments exactly, and be consistent with your verdict — request_changes requires at least one critical issue, and approve must have no critical issues."
   echo
+  echo "The \`reasoning\` field is published verbatim into a PR comment, so it must read as polished, final prose. Finish counting and deciding BEFORE you write it: count your inline findings, settle on the tally, then write the field once. Do NOT narrate your thinking, show your work, or correct yourself in the text — no \"wait\", \"recount\", \"on second thought\", \"adjusting\", or similar self-correction. Write only the final tally line and the final reasoning paragraph, with no draft, scratch, or revised counts left behind."
+  echo
   echo "Submit your final answer via the submit_final_answer tool using the schema you were given."
 } > /tmp/otto-review/user-prompt.txt
 
