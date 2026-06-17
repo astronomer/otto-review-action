@@ -69,6 +69,8 @@ python3 "$ACTION_PATH/core/format-conversation.py" \
   echo
   echo "The \`reasoning\` field is published verbatim into a PR comment, so it must read as polished, final prose. Finish counting and deciding BEFORE you write it: count your inline findings, settle on the tally, then write the field once. Do NOT narrate your thinking, show your work, or correct yourself in the text — no \"wait\", \"recount\", \"on second thought\", \"adjusting\", or similar self-correction. Write only the final tally line and the final reasoning paragraph, with no draft, scratch, or revised counts left behind."
   echo
+  echo "When there are no issues found, keep the reasoning paragraph short and end it with a single upbeat, enthusiastic remark cheering the author on and looking forward to their next contribution — vary the wording each time, in the spirit of \"Can't wait for the next one!\" or \"Another round soon, please!\". Only do this for the clean, no-issues case; when there are findings, keep your reasoning straightforward and professional."
+  echo
   echo "Submit your final answer via the submit_final_answer tool using the schema you were given."
 } > /tmp/otto-review/user-prompt.txt
 
