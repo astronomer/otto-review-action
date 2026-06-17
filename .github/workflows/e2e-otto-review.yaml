@@ -28,22 +28,11 @@ permissions:
 
 jobs:
   review:
-    # Exercise both documented auth wirings so neither path can regress
-    # unnoticed (issue #23: the input path was broken for months because the
-    # e2e only ever supplied the token as a workflow-level env var).
-    #   - env:   token via the workflow `env: ASTRO_API_TOKEN` (README quickstart)
-    #   - input: token via the `astro-api-token` / `astro-organization` inputs
-    # Serialized (max-parallel: 1) so the two legs don't race each other
-    # upserting the same PR's sticky comment / inline threads. fail-fast off so
-    # one wiring breaking still reports the other's result.
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        auth: [env, input]
+    # Authenticates Otto via the workflow `env: ASTRO_API_TOKEN` path (the
+    # README quickstart wiring) and posts the review exactly once.
     env:
-      ASTRO_API_TOKEN: ${{ matrix.auth == 'env' && secrets.ASTRO_API_TOKEN || '' }}
-      ASTRO_ORGANIZATION: ${{ matrix.auth == 'env' && secrets.ASTRO_ORGANIZATION || '' }}
+      ASTRO_API_TOKEN: ${{ secrets.ASTRO_API_TOKEN }}
+      ASTRO_ORGANIZATION: ${{ secrets.ASTRO_ORGANIZATION }}
     # Trigger conditions:
     # - pull_request: same-repo non-draft PRs touching e2e/** or this workflow.
     # - issue_comment: a `/otto-review` comment from someone with write access
@@ -93,14 +82,10 @@ jobs:
               github.event.pull_request.head.sha ||
               format('refs/pull/{0}/head', github.event.issue.number || inputs.pr_number)
             }}
+      # Auth flows through the job `env:` above; the action falls back to the
+      # ASTRO_API_TOKEN / ASTRO_ORGANIZATION env vars when the inputs are empty.
       - name: Otto Review
         uses: ./
         with:
           dry-run: "true"
           pr-number: ${{ github.event.issue.number || inputs.pr_number }}
-          # On the 'input' leg, supply auth through the action inputs and leave
-          # the env vars unset (see job `env:` above) so this run authenticates
-          # purely off the input path. On the 'env' leg these resolve to '' and
-          # the action falls back to the env vars.
-          astro-api-token: ${{ matrix.auth == 'input' && secrets.ASTRO_API_TOKEN || '' }}
-          astro-organization: ${{ matrix.auth == 'input' && secrets.ASTRO_ORGANIZATION || '' }}
