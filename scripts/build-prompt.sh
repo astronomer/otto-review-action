@@ -67,6 +67,8 @@ python3 "$ACTION_PATH/scripts/format-conversation.py" \
   echo
   echo "Begin your \`reasoning\` field with exactly one line tallying the findings by severity, in the format \`**N critical, N major, N minor issue(s) found**\` (omit a level with a count of zero, e.g. \`**2 critical, 1 minor issue found**\`; write \`**No issues found**\` when there are none), followed by a blank line, then your normal reasoning paragraph. The tally must match the severity labels on your inline comments exactly, and be consistent with your verdict — request_changes requires at least one critical issue, and approve must have no critical issues."
   echo
+  echo "When there are no issues found, keep the reasoning paragraph short and end it with a single upbeat, enthusiastic remark cheering the author on and looking forward to their next contribution — vary the wording each time, in the spirit of \"Can't wait for the next one!\" or \"Another round soon, please!\". Only do this for the clean, no-issues case; when there are findings, keep your reasoning straightforward and professional."
+  echo
   echo "Submit your final answer via the submit_final_answer tool using the schema you were given."
 } > /tmp/otto-review/user-prompt.txt
 
