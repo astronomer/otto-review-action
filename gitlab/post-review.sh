@@ -168,12 +168,42 @@ step_output summary "$summary"
 # it is current for this run).
 open_otto_bodies='[]'
 if [[ -s /tmp/otto-review/gitlab-discussions.json ]]; then
+  # Strip the off-diff fallback suffix (appended below when a position is
+  # rejected) before matching. A finding that GitLab refused to anchor last run
+  # was posted as a general note carrying body + "\n\n_(could not anchor ...)_";
+  # this run it is rebuilt as a bare inline body. Without normalizing the stored
+  # body the two never match, so the finding re-posts as a fresh general note on
+  # every run — duplicate spam. Stripping the suffix makes the dedup cover it.
   open_otto_bodies=$(jq -c --arg m "$MARKER" '
     [ .[]?.notes[]?
       | select((.resolved // false) == false)
       | (.body // "")
-      | select(contains($m)) ]' /tmp/otto-review/gitlab-discussions.json 2>/dev/null || echo '[]')
+      | select(contains($m))
+      | sub("\n\n_\\(could not anchor to [^\n]*\\)_$"; "") ]' \
+    /tmp/otto-review/gitlab-discussions.json 2>/dev/null || echo '[]')
 fi
+
+# new_line -> old_line for CONTEXT (unchanged) lines, per file. GitLab anchors a
+# diff note on an unchanged line only when the position carries BOTH old_line and
+# new_line; an added line takes new_line alone (and a removed line old_line alone,
+# but filter-comments.py already drops those — findings are right-side only).
+# filter-comments.py keeps context lines as valid anchors, so without old_line
+# every context-line finding's position would be rejected and demoted to a
+# general note. We walk the capped diff once to recover the old-side line number
+# for each context line.
+context_map=$(awk '
+  /^diff --git /{next} /^index /{next} /^--- /{next}
+  /^\+\+\+ /{ p=substr($0,5); if (p ~ /^b\//){file=substr(p,3)} else {file=""}; next }
+  /^@@ /{ match($0,/-[0-9]+/); old=substr($0,RSTART+1,RLENGTH-1)+0;
+          match($0,/\+[0-9]+/); new=substr($0,RSTART+1,RLENGTH-1)+0; next }
+  { if (file=="") {next}
+    c=substr($0,1,1);
+    if (c==" ") { print file"\t"new"\t"old; old++; new++ }
+    else if (c=="+") { new++ }
+    else if (c=="-") { old++ } }
+' /tmp/otto-review/diff.capped.patch | jq -Rsc '
+  split("\n") | map(select(length>0) | split("\t"))
+  | reduce .[] as $r ({}; .[$r[0]][$r[1]] = ($r[2]|tonumber))')
 
 # Build every diff-anchored payload (body = marker + finding + optional GitLab
 # suggestion fence; position from diff_refs). GitLab's suggestion fence differs
@@ -182,6 +212,7 @@ fi
 all_payloads=$(jq -c \
   --argjson changed "$changed_csv" \
   --argjson pathmap "$pathmap" \
+  --argjson context "$context_map" \
   --arg marker "$MARKER" \
   --arg base "$base_sha" --arg start "$start_sha" --arg head "$head_sha" '
   [ (.comments // [])[]
@@ -189,6 +220,7 @@ all_payloads=$(jq -c \
     | . as $c
     | (if ($c.start_line // null) != null and $c.start_line < $c.line
        then ($c.line - $c.start_line) else 0 end) as $off
+    | ($context[$c.file][($c.line | tostring)]) as $old_line
     | {
         body: (
           $marker + "\n" +
@@ -197,13 +229,16 @@ all_payloads=$(jq -c \
            else ($c.body // "")
            end)
         ),
-        position: {
-          position_type: "text",
-          base_sha: $base, start_sha: $start, head_sha: $head,
-          new_path: $c.file,
-          old_path: ($pathmap[$c.file] // $c.file),
-          new_line: $c.line
-        }
+        position: (
+          {
+            position_type: "text",
+            base_sha: $base, start_sha: $start, head_sha: $head,
+            new_path: $c.file,
+            old_path: ($pathmap[$c.file] // $c.file),
+            new_line: $c.line
+          }
+          + (if $old_line != null then {old_line: $old_line} else {} end)
+        )
       }
   ]' <<<"$verdict_json")
 
@@ -227,9 +262,10 @@ else
       continue
     fi
     # Fallback: position rejected (line not precisely on the diff per GitLab).
-    # Post a general note so the finding isn't silently lost. GitLab only allows
-    # committable suggestions on exact diff lines, so the suggestion is rendered
-    # as a plain ```diff block here.
+    # Post a general note so the finding isn't silently lost. The body is posted
+    # as-is, including any ```suggestion fence: off a diff line GitLab can't make
+    # the suggestion committable, so it renders as a plain (non-applicable) code
+    # block — readable, just not one-click-appliable.
     path=$(jq -r '.position.new_path' <<<"$c")
     line=$(jq -r '.position.new_line' <<<"$c")
     warn "Inline discussion on $path:$line rejected (HTTP $http); falling back to a general note."

@@ -32,6 +32,25 @@ analog:
 - **Thread resolution** — `resolved_thread_ids` triggers a
   `PUT .../discussions/:id?resolved=true`.
 
+### Edge-case harness
+
+[`run-edge.sh`](./run-edge.sh) drives the same real scripts against
+[`fixtures-edge/`](./fixtures-edge) to lock the inline-position corners the
+happy-path run (a single added line on a brand-new file) never reaches:
+
+- **Context-line anchoring** — a finding on an unchanged (context) line emits a
+  position with **both** `old_line` and `new_line`, which GitLab requires to
+  anchor a note on an unchanged line; an added-line finding emits `new_line`
+  only. Without the `old_line`, GitLab rejects the context-line position and the
+  finding is demoted to a general note.
+- **Fallback-note dedup** — a finding that was posted as a general note last run
+  (position rejected, `_(could not anchor ...)_` suffix appended) is **not**
+  re-posted this run; the dedup baseline strips that suffix before matching.
+
+```bash
+bash gitlab/e2e/run-edge.sh
+```
+
 This runs in CI on Linux via the
 [`GitLab Adapter Test`](../../.github/workflows/gitlab-adapter-test.yaml) workflow,
 so it guards the adapter (and the shared core) on every PR touching `gitlab/**`

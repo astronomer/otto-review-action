@@ -1,0 +1,18 @@
+{
+  "title": "Edit core.py",
+  "description": "A modified file with context + added lines (exercises old_line anchoring).",
+  "author": { "username": "contributor" },
+  "source_branch": "feature/edit",
+  "target_branch": "main",
+  "diff_refs": { "base_sha": "BASE111", "start_sha": "START222", "head_sha": "HEAD333" },
+  "changes": [
+    {
+      "old_path": "app/core.py",
+      "new_path": "app/core.py",
+      "new_file": false,
+      "renamed_file": false,
+      "deleted_file": false,
+      "diff": "@@ -1,5 +1,6 @@\n import os\n-x = 1\n+x = 2\n+y = 3\n print(x)\n done()\n cleanup()\n"
+    }
+  ]
+}

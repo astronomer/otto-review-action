@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Run offline GitLab e2e
         run: bash gitlab/e2e/run.sh
+      - name: Run offline GitLab e2e (inline-position edge cases)
+        run: bash gitlab/e2e/run-edge.sh
 
   docker-build:
     # Build the consumer image (single-arch, no push) and smoke-test it so the

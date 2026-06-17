@@ -12,60 +12,10 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ACTION_PATH="$(cd "$HERE/../.." && pwd)"
-export ACTION_PATH
 export E2E_FIXTURES="$HERE/fixtures"
+source "$HERE/lib.sh"
 
-WORK="$(mktemp -d)"
-export STUB_LOG="$WORK/requests.log"
-: > "$STUB_LOG"
-
-# Put the curl stub first on PATH as `curl`.
-BINSTUB="$WORK/bin"
-mkdir -p "$BINSTUB"
-cp "$HERE/curl-stub.sh" "$BINSTUB/curl"
-chmod +x "$BINSTUB/curl"
-export PATH="$BINSTUB:$PATH"
-
-# Clean shared sidecar dir.
-rm -rf /tmp/otto-review
-mkdir -p /tmp/otto-review
-
-# Env the adapter scripts expect (run-review.sh would normally set these).
-export GITLAB_TOKEN="stub-token"
-export CI_API_V4_URL="https://gitlab.example/api/v4"
-export PROJECT_ID="42"
-export MR_IID="7"
-export MAX_DIFF_LINES="50000"
-export DRY_RUN="false"
-export VERDICT_FILE="/tmp/otto-review/verdict-raw.txt"
-export OTTO_OUTPUT_FILE="$WORK/out.env"
-: > "$OTTO_OUTPUT_FILE"
-
-fail=0
-check() {  # check <description> <condition-cmd...>
-  local desc="$1"; shift
-  if "$@"; then
-    echo "  PASS: $desc"
-  else
-    echo "  FAIL: $desc" >&2
-    fail=1
-  fi
-}
-
-echo "== gather =="
-bash "$ACTION_PATH/gitlab/gather-context.sh"
-
-echo "== build prompt (neutral core) =="
-bash "$ACTION_PATH/core/build-prompt.sh" >/dev/null
-
-# Supply Otto's verdict from the fixture (core/run-otto.sh needs the real CLI).
-cp "$E2E_FIXTURES/verdict.json" "$VERDICT_FILE"
-
-echo "== post (stubbed network) =="
-bash "$ACTION_PATH/gitlab/post-review.sh"
-
-echo "== assertions =="
+run_adapter
 
 # --- conversation normalization renders correctly via the neutral formatter ---
 conv_render="$(python3 "$ACTION_PATH/core/format-conversation.py" /tmp/otto-review/pr-conversation.json)"
@@ -114,10 +64,4 @@ check "resolved-thread-count output is 1" grep -qx "resolved-thread-count=1" "$O
 check "PUT resolve on disc-human-resolved happened" \
   bash -c "grep -q '^=== PUT .*/discussions/disc-human-resolved?resolved=true$' '$STUB_LOG'"
 
-echo
-if [[ "$fail" == 0 ]]; then
-  echo "ALL PASS"
-else
-  echo "FAILURES (see above). Request log: $STUB_LOG" >&2
-fi
-exit "$fail"
+summarize
