@@ -93,11 +93,13 @@ pathmap=$(jq -c '[(.changes // [])[] | {(.new_path): .old_path}] | add // {}' \
   /tmp/otto-review/gitlab-mr-changes.json 2>/dev/null || echo '{}')
 
 # Changed files (right side) from the capped diff, to drop findings on files
-# not in the diff before we even try to anchor them.
+# not in the diff before we even try to anchor them. The `[@]+` guard keeps the
+# expansion from tripping `set -u` on a deletion-only MR (no `+++ b/` lines, so
+# the array is empty); printf then sees no args and changed_csv becomes `[]`.
 changed_files=()
 while IFS= read -r _f; do changed_files+=("$_f"); done \
   < <(grep '^+++ b/' /tmp/otto-review/diff.capped.patch | sed 's|^+++ b/||')
-changed_csv=$(printf '%s\n' "${changed_files[@]}" | jq -Rsc 'split("\n") | map(select(. != ""))')
+changed_csv=$(printf '%s\n' ${changed_files[@]+"${changed_files[@]}"} | jq -Rsc 'split("\n") | map(select(. != ""))')
 
 # Drop findings whose line falls outside a diff hunk (same neutral helper the
 # GitHub adapter uses); its output lands on added/context lines of the new side,

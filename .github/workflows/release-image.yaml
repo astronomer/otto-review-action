@@ -38,9 +38,19 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          # INPUT_TAG comes through env: (never interpolated into the script) so a
+          # workflow_dispatch caller can't inject shell, and is shape-checked
+          # before use — this runner has packages:write + id-token:write.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if ! printf '%s' "$INPUT_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+              echo "Invalid tag (expected vX.Y.Z or vX.Y.Z-prerelease): $INPUT_TAG" >&2
+              exit 1
+            fi
+            echo "value=$INPUT_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
