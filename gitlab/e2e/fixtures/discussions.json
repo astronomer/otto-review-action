@@ -1,0 +1,55 @@
+[
+  {
+    "id": "disc-open-otto",
+    "notes": [
+      {
+        "id": 11,
+        "system": false,
+        "resolvable": true,
+        "resolved": false,
+        "author": { "username": "otto-bot" },
+        "created_at": "2026-06-01T00:00:00Z",
+        "body": "<!-- otto-reviewer -->\n**[Critical]** `cleaned_data` is undefined; did you mean `cleaned`?",
+        "position": { "new_path": "dags/buggy_etl_dag.py", "old_path": "dags/buggy_etl_dag.py", "new_line": 5, "old_line": null }
+      }
+    ]
+  },
+  {
+    "id": "disc-human-resolved",
+    "notes": [
+      {
+        "id": 12,
+        "system": false,
+        "resolvable": true,
+        "resolved": true,
+        "author": { "username": "reviewer" },
+        "created_at": "2026-06-01T01:00:00Z",
+        "body": "Nit: rename `raw`.",
+        "position": { "new_path": "dags/buggy_etl_dag.py", "new_line": 3, "old_line": null }
+      }
+    ]
+  },
+  {
+    "id": "disc-general",
+    "notes": [
+      {
+        "id": 13,
+        "system": false,
+        "author": { "username": "manager" },
+        "created_at": "2026-06-01T02:00:00Z",
+        "body": "Please add tests before merge."
+      }
+    ]
+  },
+  {
+    "id": "disc-system",
+    "notes": [
+      {
+        "id": 14,
+        "system": true,
+        "author": { "username": "gitlab" },
+        "body": "added 1 commit"
+      }
+    ]
+  }
+]

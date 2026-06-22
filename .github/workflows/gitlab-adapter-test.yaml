@@ -1,0 +1,50 @@
+name: GitLab Adapter Test
+
+# Guards the GitLab adapter and the shared neutral core against regressions:
+#   - offline-e2e:   run gather -> normalize -> filter -> post end-to-end with
+#                    the network stubbed (no live GitLab instance needed).
+#   - docker-build:  build the consumer image and smoke-test it (no push).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'gitlab/**'
+      - 'core/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/gitlab-adapter-test.yaml'
+
+jobs:
+  offline-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run offline GitLab e2e
+        run: bash gitlab/e2e/run.sh
+      - name: Run offline GitLab e2e (inline-position edge cases)
+        run: bash gitlab/e2e/run-edge.sh
+
+  docker-build:
+    # Build the consumer image (single-arch, no push) and smoke-test it so the
+    # Dockerfile is validated on every PR, not just at release time. The release
+    # workflow does the multi-arch build + push.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: otto-review:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the image
+        run: |
+          docker run --rm otto-review:ci bash -lc '
+            command -v astro && astro version \
+              && test -f /opt/otto-review/gitlab/run-review.sh \
+              && test -f /opt/otto-review/core/run-otto.sh \
+              && test -f /opt/otto-review/gitlab/normalize-conversation.py'

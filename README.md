@@ -35,6 +35,43 @@ jobs:
         uses: astronomer/otto-review-action@v0.1.0
 ```
 
+## Run on GitLab
+
+Otto can also review GitLab **Merge Requests**. GitLab has no composite-action
+runner, so instead of `uses:` you add a CI job that runs the published image
+(`ghcr.io/astronomer/otto-review`, public on GHCR) — it bakes the Astro CLI and
+the review scripts. See [`gitlab/`](./gitlab) for the adapter and
+[`gitlab/otto-review.gitlab-ci.yml`](./gitlab/otto-review.gitlab-ci.yml) for the
+template to copy into your project's `.gitlab-ci.yml`:
+
+```yaml
+otto_review:
+  image: ghcr.io/astronomer/otto-review:v0   # :v0 tracks latest v0.x; mirrors uses:@v0
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - bash /opt/otto-review/gitlab/run-review.sh
+```
+
+Add these masked **CI/CD variables** (Settings → CI/CD → Variables):
+
+| Variable | Description |
+| --- | --- |
+| `ASTRO_API_TOKEN` | Astronomer API token (organization member permission). |
+| `ASTRO_ORGANIZATION` | Astronomer organization ID for gateway routing. |
+| `GITLAB_TOKEN` | A PAT or project access token with the **`api`** scope, used to post the review. `CI_JOB_TOKEN` is **not** sufficient for the notes/discussions API. |
+
+Optional variables: `ASTRO_DOMAIN` (default `astronomer.io`), `ASTRO_CLI_VERSION`,
+`OTTO_MODEL`, `OTTO_ALLOWED_TOOLS`, `OTTO_MAX_DIFF_LINES` (default `50000`),
+`OTTO_DRY_RUN` (`true` posts only the sticky summary).
+
+**Differences from the GitHub action:** the GitLab adapter is *sticky-note-only*
+— it posts a sticky summary note plus inline notes and resolves addressed
+threads, but never approves or blocks the MR (GitLab has no native "request
+changes" review event). The image is public so runners pull it without
+credentials; Otto itself stays gateway-gated, so a public image grants no free
+usage.
+
 ## Inputs
 
 | Name | Default | Description |
@@ -138,9 +175,12 @@ Releases are cut from `main`. Each release publishes an immutable `vX.Y.Z` tag a
    ```bash
    gh release create "$VERSION" --title "$VERSION" --generate-notes
    ```
-5. Bump the `uses:` example in this README to the new tag in the same PR that introduces user-visible changes, or as a follow-up.
+   Publishing the release triggers [`release-image.yaml`](./.github/workflows/release-image.yaml), which builds and pushes the GitLab consumer image to `ghcr.io/astronomer/otto-review`, tagged `vX.Y.Z`, `vX.Y`, and the moving `vX` (plus `latest` for non-prereleases). GitLab consumers pinned to `:v0` get the update automatically.
+5. Bump the `uses:` example in this README to the new tag in the same PR that introduces user-visible changes, or as a follow-up. (The GitLab `image:` tag is the moving `:v0`, so it needs no bump.)
 
 Breaking changes bump the major (`v0` → `v1`) and start a new moving major tag. Don't repoint `v0` at a `v1.x.x` release.
+
+**First release only:** GHCR packages are created private. After the first image is pushed, set the `otto-review` package visibility to **public** once (package settings → Danger Zone → Change visibility) so GitLab runners can pull it without credentials. To seed the image before the first real release (e.g. to test the `image:` template), run the `Release image` workflow via **workflow_dispatch** with a pre-release tag such as `v0.0.1-rc1`.
 
 ## License
 

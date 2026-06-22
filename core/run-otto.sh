@@ -81,7 +81,7 @@ fi
 # reviewer persona's bundled output schema registers. Look for that event
 # first; if we can't find it, fall back to scanning the whole stream for the
 # largest balanced JSON object that matches the schema's required keys.
-python3 "$ACTION_PATH/scripts/extract-verdict.py" \
+python3 "$ACTION_PATH/core/extract-verdict.py" \
   < /tmp/otto-review/otto-stdout.jsonl \
   > /tmp/otto-review/verdict-raw.txt
 

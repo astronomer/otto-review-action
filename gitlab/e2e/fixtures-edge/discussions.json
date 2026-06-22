@@ -1,0 +1,15 @@
+[
+  {
+    "id": "disc-f3-fallback",
+    "notes": [
+      {
+        "id": 21,
+        "system": false,
+        "resolvable": false,
+        "author": { "username": "otto-bot" },
+        "created_at": "2026-06-10T00:00:00Z",
+        "body": "<!-- otto-reviewer -->\n**[Minor]** F3 finding that fell back to a general note last run.\n\n_(could not anchor to app/core.py:3 on the diff)_"
+      }
+    ]
+  }
+]

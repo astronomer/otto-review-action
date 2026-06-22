@@ -1,0 +1,26 @@
+{
+  "verdict": "comment",
+  "summary": "Edge-case findings for position anchoring + fallback dedup.",
+  "reasoning": "**No issues found**\n\nExercises context-line vs added-line positions and fallback-note dedup.",
+  "comments": [
+    {
+      "file": "app/core.py",
+      "line": 1,
+      "severity": "low",
+      "body": "**[Minor]** F1 finding on a CONTEXT line (needs old_line)."
+    },
+    {
+      "file": "app/core.py",
+      "line": 2,
+      "severity": "medium",
+      "body": "**[Major]** F2 finding on an ADDED line (no old_line)."
+    },
+    {
+      "file": "app/core.py",
+      "line": 3,
+      "severity": "low",
+      "body": "**[Minor]** F3 finding that fell back to a general note last run."
+    }
+  ],
+  "resolved_thread_ids": []
+}

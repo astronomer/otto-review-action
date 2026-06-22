@@ -1,0 +1,31 @@
+# Otto Review for GitLab CI
+#
+# Runs Astronomer's Otto reviewer over a Merge Request and posts a sticky
+# summary note plus inline review comments. This is the GitLab counterpart of
+# the otto-review-action GitHub Action.
+#
+# How to use:
+#   1. Copy this job into your project's .gitlab-ci.yml, or pull it via
+#      `include: { remote: "<raw URL to this file>" }`.
+#   2. Add these masked CI/CD variables (Settings -> CI/CD -> Variables):
+#        ASTRO_API_TOKEN     - Astronomer API token (gateway auth)
+#        ASTRO_ORGANIZATION  - Astronomer organization id
+#        GITLAB_TOKEN        - a PAT or project access token with the `api` scope
+#                              (CI_JOB_TOKEN is NOT sufficient for the notes /
+#                              discussions API).
+#   3. Pin the image tag to a release (`:v0` tracks the latest v0.x; mirrors
+#      GitHub's `uses: ...@v0`). Use `:vX.Y.Z` to pin exactly.
+#
+# The image (public, on GHCR) bakes the Astro CLI and the review scripts, so the
+# job needs no repo clone and no per-run install. Otto stays gateway-gated, so a
+# public image grants no free usage.
+
+otto_review:
+  image: ghcr.io/astronomer/otto-review:v0
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    OTTO_MAX_DIFF_LINES: "50000"
+    OTTO_DRY_RUN: "false"
+  script:
+    - bash /opt/otto-review/gitlab/run-review.sh

@@ -10,4 +10,4 @@ jobs:
       - name: yaml-lint
         uses: ibiqlik/action-yamllint@v3
         with:
-          file_or_dir: action.yaml .github/workflows
+          file_or_dir: action.yaml .github/workflows gitlab/otto-review.gitlab-ci.yml
