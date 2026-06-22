@@ -36,24 +36,57 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
-      - name: Resolve version
+      - name: Resolve version and tags
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          IMAGE: ghcr.io/astronomer/otto-review
         run: |
-          # INPUT_TAG comes through env: (never interpolated into the script) so a
-          # workflow_dispatch caller can't inject shell, and is shape-checked
-          # before use — this runner has packages:write + id-token:write.
+          set -euo pipefail
+          # On workflow_dispatch the version is the `tag` input (via env:, never
+          # interpolated into the script, so a dispatcher can't inject shell on
+          # this packages:write + id-token:write runner). On a published release
+          # it's the release tag (github.ref_name).
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if ! printf '%s' "$INPUT_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
-              echo "Invalid tag (expected vX.Y.Z or vX.Y.Z-prerelease): $INPUT_TAG" >&2
-              exit 1
-            fi
-            echo "value=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            VERSION="$INPUT_TAG"
           else
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            VERSION="$REF_NAME"
           fi
+          # Shape-check both sources: guards the dispatch input and a malformed
+          # release tag alike.
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Invalid version (expected vX.Y.Z or vX.Y.Z-prerelease): $VERSION"
+            exit 1
+          fi
+
+          # Derive the moving tags from vX.Y.Z[-pre]. We compute the tag list
+          # here rather than via docker/metadata-action's semver patterns because
+          # that action drops the leading `v` for prereleases — but consumers pin
+          # the v-prefixed `:v0` / `:vX.Y.Z` tags (see gitlab/otto-review.gitlab-ci.yml
+          # and the README), so the prefix must be guaranteed.
+          base="${VERSION#v}"; base="${base%%-*}"   # X.Y.Z
+          major="v${base%%.*}"                      # vX
+          minor="v${base%.*}"                       # vX.Y
+
+          # The full version tag always publishes. The moving major/minor/latest
+          # tags track GA releases only: a prerelease must not advance :v0 or
+          # :latest, or consumers pinned there would jump onto an rc.
+          tags=("$IMAGE:$VERSION")
+          case "$VERSION" in
+            *-*) : ;;  # prerelease — full version tag only
+            *)   tags+=("$IMAGE:$minor" "$IMAGE:$major" "$IMAGE:latest") ;;
+          esac
+
+          {
+            echo "value=$VERSION"
+            echo "tags<<EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved $VERSION; publishing tags:"
+          printf '  %s\n' "${tags[@]}"
 
       - uses: docker/setup-qemu-action@v3
         with:
@@ -67,18 +100,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute tags
+      - name: Compute labels
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/astronomer/otto-review
-          # latest=auto (the default, stated explicitly): emit `latest` for a
-          # non-prerelease semver, and skip it for prereleases like v0.0.1-rc1.
-          flavor: latest=auto
-          tags: |
-            type=semver,pattern=v{{version}},value=${{ steps.version.outputs.value }}
-            type=semver,pattern=v{{major}}.{{minor}},value=${{ steps.version.outputs.value }}
-            type=semver,pattern=v{{major}},value=${{ steps.version.outputs.value }}
+          # Used for OCI labels only; the tag list comes from the step above so
+          # the v-prefix is guaranteed. type=raw keeps the version label
+          # v-prefixed and matching the published full tag.
+          tags: type=raw,value=${{ steps.version.outputs.value }}
 
       - name: Build and push
         id: push
@@ -87,7 +117,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.version.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             OTTO_REVIEW_VERSION=${{ steps.version.outputs.value }}
