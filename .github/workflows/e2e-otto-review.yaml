@@ -75,7 +75,7 @@ jobs:
       # being reviewed. For pull_request the head SHA comes from the event
       # payload; for issue_comment / workflow_dispatch we resolve
       # refs/pull/<n>/head.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: >-
             ${{
