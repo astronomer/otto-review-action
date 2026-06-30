@@ -55,7 +55,7 @@ jobs:
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64    # amd64 is native to the runner; only arm64 needs emulation
 
