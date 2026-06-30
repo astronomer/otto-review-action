@@ -19,7 +19,7 @@ jobs:
   offline-e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run offline GitLab e2e
         run: bash gitlab/e2e/run.sh
       - name: Run offline GitLab e2e (inline-position edge cases)
@@ -31,7 +31,7 @@ jobs:
     # workflow does the multi-arch build + push.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
       - name: Build image
         uses: docker/build-push-action@v7
