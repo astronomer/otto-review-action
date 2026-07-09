@@ -72,6 +72,59 @@ changes" review event). The image is public so runners pull it without
 credentials; Otto itself stays gateway-gated, so a public image grants no free
 usage.
 
+## Run on Drone CI or another container CI (GitHub)
+
+If your GitHub repo is built by a container-native CI ([Drone](https://www.drone.io/),
+Jenkins, Buildkite, CircleCI, Woodpecker, …) rather than GitHub Actions, run the
+review from the same published image. These runners have no composite-action
+support, so — like GitLab — you add a pipeline step that runs the image;
+`OTTO_SCM=github` selects the GitHub adapter, which posts the identical review
+(sticky comment, inline findings, gating review, thread resolution). See
+[`ci/`](./ci) for the adapter and
+[`ci/otto-review.drone.yml`](./ci/otto-review.drone.yml) for the Drone template.
+
+The orchestrator reads neutral `OTTO_*` inputs; under Drone they default from the
+`DRONE_*` predefined variables, so **Drone needs zero extra config**:
+
+```yaml
+kind: pipeline
+type: docker
+name: otto-review
+trigger:
+  event: [pull_request]
+steps:
+  - name: otto-review
+    image: ghcr.io/astronomer/otto-review:v0   # :v0 tracks latest v0.x; mirrors uses:@v0
+    environment:
+      OTTO_SCM: github
+      ASTRO_API_TOKEN: { from_secret: astro_api_token }
+      ASTRO_ORGANIZATION: { from_secret: astro_organization }
+      GITHUB_TOKEN: { from_secret: github_token }
+    commands:
+      - bash /opt/otto-review/ci/run-review.sh
+```
+
+Add these as **Drone secrets** (`drone secret add ...` or the repo UI):
+
+| Secret | Description |
+| --- | --- |
+| `astro_api_token` | Astronomer API token (organization member permission). |
+| `astro_organization` | Astronomer organization ID for gateway routing. |
+| `github_token` | A GitHub PAT or App token with `pull-requests:write`. A container CI mints no token of its own, so this must be a real token; it also resolves review threads, so no separate resolve-token is needed. |
+
+**Any other container CI** works the same way — run the image with
+`bash /opt/otto-review/ci/run-review.sh` on your pull-request event and set the
+PR coordinates explicitly (Drone is the only runtime auto-detected): `OTTO_SCM=github`,
+`OTTO_REPO=owner/name`, `OTTO_PR_NUMBER=<n>`, plus the three secrets above.
+
+Optional variables mirror the GitLab list (`ASTRO_DOMAIN`, `ASTRO_CLI_VERSION`,
+`OTTO_MODEL`, `OTTO_ALLOWED_TOOLS`, `OTTO_MAX_DIFF_LINES`, `OTTO_DRY_RUN`), plus
+`OTTO_RESOLVE_TOKEN` (defaults to `github_token`).
+
+**Note:** this path reviews the PR of a pull-request build only, and only
+`OTTO_SCM=github` is wired today. `OTTO_SCM=gitlab` is not supported here (run
+the GitLab adapter from GitLab CI instead).
+
 ## Inputs
 
 | Name | Default | Description |
