@@ -218,32 +218,63 @@ runs:
         CLI_PATH: ${{ steps.install.outputs.cli-path }}
       run: |
         echo ::group::Verify Otto
-        # Sanity-check that this CLI knows about `otto`. Older versions silently
-        # accept unknown subcommands and exit zero, so we look for "otto" in
-        # `astro --help`. Fail loud if it isn't there — running blind would
-        # produce a confusing "no diff posted" outcome instead of an actionable
-        # error.
+        # Ask the CLI for its help text and keep BOTH the text and the exit
+        # status — in ASTRO_HELP and in the return code. Two failures live here
+        # and they need different messages: "astro could not be asked" and
+        # "astro answered, and the answer has no otto in it". Collapsing them is
+        # what made a one-off blip on the runner report "does not bundle Otto"
+        # for a CLI that bundles it fine (AI-710; the rerun was green).
         #
-        # Capture the output first rather than piping straight into `grep -q`
-        # (AI-710): `grep -q` exits on first match, closing the pipe while
-        # `astro` is still writing its multi-line help; astro dies with SIGPIPE
-        # (141), and under the composite default `-o pipefail` that 141 becomes
-        # the pipeline's status — `if !` took the error branch even though grep
-        # matched. `|| true` keeps a genuine astro failure from aborting the
-        # step so the actionable message below stays the one the user sees.
-        help_out="$("$CLI_PATH" --help 2>&1 || true)"
-        if ! printf '%s\n' "$help_out" | grep -qiE '^\s*otto\b'; then
+        # Retry once. `astro --help` makes no network calls and is
+        # deterministic, so an empty or non-zero result is the invocation
+        # breaking rather than the CLI. `astro otto --help` downloads Otto on
+        # first use, which is a real network call and a real reason to give it
+        # a second go.
+        #
+        # Capture first, then grep, rather than piping astro into `grep -q`:
+        # `grep -q` exits on first match and closes the pipe while astro is
+        # still writing, astro dies with SIGPIPE (141), and under the composite
+        # default `-o pipefail` that 141 becomes the pipeline's status.
+        ASTRO_HELP=""
+        astro_help() {
+          local label="astro${*:+ $*} --help"
+          local attempt status
+          for attempt in 1 2; do
+            status=0
+            ASTRO_HELP="$("$CLI_PATH" "$@" --help 2>&1)" || status=$?
+            if [[ $status -eq 0 && -n "$ASTRO_HELP" ]]; then
+              return 0
+            fi
+            if [[ $attempt -eq 1 ]]; then
+              echo "'$label' exited ${status} and returned ${#ASTRO_HELP} bytes. Retrying in 2s."
+              sleep 2
+            fi
+          done
+          echo "--- what '$label' printed ---"
+          printf '%s\n' "$ASTRO_HELP" | head -20
+          echo "--- end ---"
+          echo "::error::'$label' exited ${status} on both attempts, so this step never learned whether the CLI bundles Otto. See the output above."
+          return 1
+        }
+        # Older CLI versions accept unknown subcommands and exit zero, so look
+        # for `otto` in the command list instead of running it.
+        astro_help || exit 1
+        if ! printf '%s\n' "$ASTRO_HELP" | grep -qiE '^\s*otto\b'; then
+          echo "--- what 'astro --help' printed ---"
+          printf '%s\n' "$ASTRO_HELP" | head -40
+          echo "--- end ---"
           echo "::error::Astro CLI ${CLI_VERSION} at ${CLI_PATH} does not bundle Otto. Otto requires Astro CLI >= 1.42.0. Set the 'astro-cli-version' input to '1.42.0' or newer."
           exit 1
         fi
         # Also check the bundled Otto knows about the `reviewer` persona. The
         # action no longer ships its own system prompt + verdict schema — both
         # come from the persona. An Otto build without it would error out at
-        # runtime; fail here with an actionable message. Same capture-first
-        # treatment as above (AI-710) — `otto --help` is also long enough to
-        # lose the SIGPIPE/pipefail race against `grep -q`.
-        otto_help_out="$("$CLI_PATH" otto --help 2>&1 || true)"
-        if ! printf '%s\n' "$otto_help_out" | grep -qE '\breviewer\b'; then
+        # runtime; fail here with an actionable message.
+        astro_help otto || exit 1
+        if ! printf '%s\n' "$ASTRO_HELP" | grep -qE '\breviewer\b'; then
+          echo "--- what 'astro otto --help' printed ---"
+          printf '%s\n' "$ASTRO_HELP" | head -40
+          echo "--- end ---"
           echo "::error::Astro CLI ${CLI_VERSION} bundles Otto but not the 'reviewer' persona. Update to a newer Otto build (Otto auto-updates on first 'astro otto' invocation; clear ~/.astro/bin/otto if it appears stuck)."
           exit 1
         fi

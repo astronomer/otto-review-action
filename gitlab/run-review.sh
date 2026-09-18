@@ -80,16 +80,53 @@ export ASTRO_CLI_PATH
 log "Astro CLI: $ASTRO_CLI_PATH ($("$ASTRO_CLI_PATH" version 2>/dev/null | head -1 || echo unknown))"
 
 # ---------------------------------------------------------------------------
-# 3. Verify Otto + the reviewer persona are bundled. Capture output first then
-#    grep: `grep -q` closes the pipe on first match and astro dies with SIGPIPE
-#    (141), which under pipefail would otherwise be read as "not found".
+# 3. Verify Otto + the reviewer persona are bundled.
+#
+#    astro_help keeps both the help text (in ASTRO_HELP) and the exit status,
+#    because two failures live here and they need different messages: "astro
+#    could not be asked" and "astro answered, and the answer has no otto in
+#    it". Collapsing them reports "does not bundle Otto" for a CLI that bundles
+#    it fine, whenever the invocation itself breaks (AI-710).
+#
+#    It retries once. `astro --help` makes no network calls and is
+#    deterministic, so an empty or non-zero result is the invocation breaking
+#    rather than the CLI. `astro otto --help` downloads Otto on first use,
+#    which is a real network call and a real reason to give it a second go.
+#
+#    It captures output first then greps: `grep -q` closes the pipe on first
+#    match and astro dies with SIGPIPE (141), which under pipefail would
+#    otherwise be read as "not found".
 # ---------------------------------------------------------------------------
-help_out="$("$ASTRO_CLI_PATH" --help 2>&1 || true)"
-printf '%s\n' "$help_out" | grep -qiE '^\s*otto\b' \
-  || fail "Astro CLI does not bundle Otto. Set ASTRO_CLI_VERSION to 1.42.0 or newer."
-otto_help_out="$("$ASTRO_CLI_PATH" otto --help 2>&1 || true)"
-printf '%s\n' "$otto_help_out" | grep -qE '\breviewer\b' \
-  || fail "Bundled Otto lacks the 'reviewer' persona. Update to a newer Otto build."
+ASTRO_HELP=""
+astro_help() {
+  local label="astro${*:+ $*} --help"
+  local attempt status
+  for attempt in 1 2; do
+    status=0
+    ASTRO_HELP="$("$ASTRO_CLI_PATH" "$@" --help 2>&1)" || status=$?
+    if [[ $status -eq 0 && -n "$ASTRO_HELP" ]]; then
+      return 0
+    fi
+    if [[ $attempt -eq 1 ]]; then
+      log "'$label' exited ${status} and returned ${#ASTRO_HELP} bytes. Retrying in 2s."
+      sleep 2
+    fi
+  done
+  printf '%s\n' "$ASTRO_HELP" | head -20 >&2
+  fail "'$label' exited ${status} on both attempts, so we never learned whether the CLI bundles Otto. Its output is above."
+}
+
+astro_help
+if ! printf '%s\n' "$ASTRO_HELP" | grep -qiE '^\s*otto\b'; then
+  printf '%s\n' "$ASTRO_HELP" | head -40 >&2
+  fail "Astro CLI at $ASTRO_CLI_PATH does not bundle Otto — its help is above. Set ASTRO_CLI_VERSION to 1.42.0 or newer."
+fi
+
+astro_help otto
+if ! printf '%s\n' "$ASTRO_HELP" | grep -qE '\breviewer\b'; then
+  printf '%s\n' "$ASTRO_HELP" | head -40 >&2
+  fail "Bundled Otto lacks the 'reviewer' persona — its help is above. Update to a newer Otto build."
+fi
 log "Otto with the reviewer persona is available."
 
 # ---------------------------------------------------------------------------
