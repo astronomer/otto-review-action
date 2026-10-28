@@ -1,0 +1,58 @@
+{
+  "entire-repo": {
+    "description": "Every file in the PR diff (default).",
+    "include": ["**"],
+    "focus": ""
+  },
+  "airflow": {
+    "description": "Airflow / Astro project files only.",
+    "include": [
+      "**/dags/**",
+      "**/plugins/**",
+      "**/include/**",
+      "**/tests/**",
+      "**/.astro/**",
+      "**/requirements.txt",
+      "**/packages.txt",
+      "**/airflow_settings.yaml",
+      "**/.airflowignore",
+      "Dockerfile*"
+    ],
+    "focus": "Review as an Airflow and Astro specialist: DAG and task correctness, scheduling and idempotency, top-level code that slows DAG parsing, provider and operator usage, connections and secrets handling, and dependency or runtime-image compatibility."
+  },
+  "data-engineer": {
+    "description": "Everything a data engineer cares about: Airflow/Astro files, SQL, and dbt.",
+    "extends": "airflow",
+    "include": [
+      "*.sql",
+      "**/dbt/**",
+      "**/models/**",
+      "**/macros/**",
+      "**/seeds/**",
+      "**/snapshots/**",
+      "dbt_project.yml"
+    ],
+    "focus": "Review as a data engineer: in addition to Airflow and Astro correctness, check SQL for correctness, join fan-out, NULL handling, partition and incremental-load logic, idempotent re-runs, query cost and performance, and dbt model, test, and materialization choices. Treat schema changes as potentially breaking for downstream consumers."
+  },
+  "platform-engineer": {
+    "description": "Everything a platform engineer cares about: Terraform, containers, CI/CD, and Kubernetes.",
+    "include": [
+      "*.tf",
+      "*.tfvars",
+      "**/terraform/**",
+      "Dockerfile*",
+      "docker-compose*.yml",
+      "docker-compose*.yaml",
+      "**/.github/workflows/**",
+      ".gitlab-ci.yml",
+      "**/.gitlab/**",
+      "**/helm/**",
+      "**/charts/**",
+      "**/k8s/**",
+      "**/kubernetes/**",
+      "Makefile",
+      "*.sh"
+    ],
+    "focus": "Review as a platform engineer: infrastructure-as-code safety (destructive or replace-forcing changes, state and drift risk), least-privilege IAM and permissions, secrets exposure, network exposure, container image hygiene and pinning, CI/CD pipeline correctness and supply-chain risk, and resource limits, scaling, and rollback behavior."
+  }
+}

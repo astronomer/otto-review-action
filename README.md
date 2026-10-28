@@ -63,7 +63,7 @@ Add these masked **CI/CD variables** (Settings → CI/CD → Variables):
 
 Optional variables: `ASTRO_DOMAIN` (default `astronomer.io`), `ASTRO_CLI_VERSION`,
 `OTTO_MODEL`, `OTTO_ALLOWED_TOOLS`, `OTTO_MAX_DIFF_LINES` (default `50000`),
-`OTTO_DRY_RUN` (`true` posts only the sticky summary).
+`OTTO_DRY_RUN` (`true` posts only the sticky summary), `OTTO_REVIEW_SCOPE` (default `entire-repo`; see [Review scope](#review-scope)), `OTTO_INCLUDE_PATHS`, `OTTO_EXCLUDE_PATHS`.
 
 **Differences from the GitHub action:** the GitLab adapter is *sticky-note-only*
 — it posts a sticky summary note plus inline notes and resolves addressed
@@ -84,10 +84,35 @@ usage.
 | `model` | `""` (persona's default tier) | Model identifier passed to Otto via `--model`. Empty uses the model the reviewer persona's tier maps to. |
 | `max-diff-lines` | `50000` | Diffs longer than this are truncated. Truncation is itself a signal not to auto-approve. |
 | `allowed-tools` | `""` (persona's allowlist) | Comma-separated tool allowlist passed to Otto. Empty uses the reviewer persona's built-in allowlist (`read, grep, find, ls, bash`). Set this to override with a different list. |
+| `review-scope` | `entire-repo` | Which files in the PR diff Otto reviews. One of `entire-repo` (every changed file), `airflow` (DAGs, plugins, `include/`, tests, `.astro/`, requirements/packages, Dockerfiles), `data-engineer` (`airflow` plus `*.sql` and dbt `models/`, `macros/`, `seeds/`, `snapshots/`), or `platform-engineer` (Terraform, Dockerfiles, docker-compose, CI/CD workflows, Helm/Kubernetes, Makefile, shell scripts). See [Review scope](#review-scope). |
+| `include-paths` | `""` | Comma- or newline-separated globs that replace the selected scope's include list. |
+| `exclude-paths` | `""` | Comma- or newline-separated globs excluded on top of the selected scope. |
 | `dry-run` | `false` | When `true`, no merge-gating review is posted regardless of Otto's verdict. The sticky summary comment and inline comments are still posted. |
 | `pr-number` | `""` | PR number to review. Only consulted for events that don't carry a PR payload (`issue_comment`, `workflow_dispatch`, `repository_dispatch`). For `pull_request` / `pull_request_target` events the PR is read from the event payload and this input is ignored. |
 | `astro-domain` | `astronomer.io` | Astronomer domain. Override for non-prod environments (e.g. `astronomer-dev.io`). Only useful for internal testing. |
 
+
+## Review scope
+
+By default Otto reviews every file in the PR diff. Set `review-scope` to narrow that to the files a given role cares about; the preset definitions live in [`core/scopes.json`](core/scopes.json).
+
+```yaml
+- uses: astronomer/otto-review-action@v0
+  with:
+    review-scope: data-engineer
+    exclude-paths: "**/seeds/**"
+```
+
+How it works:
+
+- The diff is filtered to in-scope files **before** it reaches Otto, so out-of-scope files are never reviewed and inline comments can only land on in-scope files. Otto can still *read* other files at HEAD for context.
+- Non-default scopes also add a role-specific focus hint to Otto's prompt (e.g. SQL join fan-out for `data-engineer`, IAM and replace-forcing changes for `platform-engineer`).
+- When files were left out, the review is **partial**: the sticky summary says so, and an `approve` verdict is downgraded to `comment`.
+- If no changed file is in scope, the review is skipped entirely (no comment, no gating review).
+- Globs: `**` crosses directories, `*` and `?` don't cross `/`, a pattern without `/` matches file names at any depth, and a pattern with `/` is anchored at the repo root (use a `**/` prefix for nested projects). `include-paths` replaces the preset's includes; `exclude-paths` is applied after.
+- Scope-specific prompts are hints on top of the Airflow-tuned `reviewer` persona. Dedicated persona variants are a planned follow-up on the Otto side.
+
+On GitLab, set `OTTO_REVIEW_SCOPE`, `OTTO_INCLUDE_PATHS` and `OTTO_EXCLUDE_PATHS` instead.
 
 ## Outputs
 

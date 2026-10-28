@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Unit-test review-scope filtering
+        run: python3 -m unittest discover core/tests
       - name: Run offline GitLab e2e
         run: bash gitlab/e2e/run.sh
       - name: Run offline GitLab e2e (inline-position edge cases)

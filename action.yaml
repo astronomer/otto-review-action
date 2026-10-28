@@ -41,6 +41,18 @@ inputs:
     required: false
     default: ""
     description: "Comma-separated list of Otto tools the reviewer may call. Empty (default) uses the reviewer persona's built-in allowlist (read, grep, find, ls, bash). Set this to override with a different list."
+  review-scope:
+    required: false
+    default: "entire-repo"
+    description: "Which files in the PR diff Otto reviews: 'entire-repo' (every changed file, the default), 'airflow' (Airflow/Astro project files), 'data-engineer' (Airflow/Astro plus SQL and dbt), or 'platform-engineer' (Terraform, Dockerfiles, CI/CD, Kubernetes/Helm). Out-of-scope files are left out of the diff and the review is marked partial (never approved). If no changed file is in scope, the review is skipped."
+  include-paths:
+    required: false
+    default: ""
+    description: "Optional comma- or newline-separated globs that replace the selected scope's include list, e.g. 'services/etl/**, **/*.sql'. '**' crosses directories; a pattern without '/' matches file names at any depth; a pattern with '/' is anchored at the repo root (use '**/' for nested projects)."
+  exclude-paths:
+    required: false
+    default: ""
+    description: "Optional comma- or newline-separated globs excluded from the review on top of the selected scope. Same glob rules as 'include-paths'."
   dry-run:
     required: false
     default: "false"
@@ -259,9 +271,14 @@ runs:
         BASE_SHA: ${{ steps.resolve.outputs.base-sha }}
         HEAD_SHA: ${{ steps.resolve.outputs.head-sha }}
         MAX_DIFF_LINES: ${{ inputs.max-diff-lines }}
+        ACTION_PATH: ${{ github.action_path }}
+        REVIEW_SCOPE: ${{ inputs.review-scope }}
+        INCLUDE_PATHS: ${{ inputs.include-paths }}
+        EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
       run: bash "$GITHUB_ACTION_PATH/github/gather-context.sh"
 
     - name: Build prompt
+      if: steps.ctx.outputs.skip != 'true'
       id: prompt
       shell: bash
       env:
@@ -269,6 +286,7 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/core/build-prompt.sh"
 
     - name: Run Otto review
+      if: steps.ctx.outputs.skip != 'true'
       id: otto
       shell: bash
       env:
@@ -293,6 +311,7 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/core/run-otto.sh"
 
     - name: Post review
+      if: steps.ctx.outputs.skip != 'true'
       id: post-review
       # Reconciles Otto's footprint on the PR in place: upserts the sticky
       # summary comment, posts inline findings while skipping ones already open
