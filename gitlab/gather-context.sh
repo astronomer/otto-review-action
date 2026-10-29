@@ -22,6 +22,9 @@
 #   MR_IID         - merge request iid (CI_MERGE_REQUEST_IID)
 #   ACTION_PATH    - repo root (to invoke gitlab/normalize-conversation.py)
 #   MAX_DIFF_LINES - cap on diff length passed to Otto (default 50000)
+#   REVIEW_SCOPE / INCLUDE_PATHS / EXCLUDE_PATHS - optional review scope (see core/apply-scope.sh)
+#
+# Writes /tmp/otto-review/scope-skip.txt when no file in the diff is in scope.
 
 set -euo pipefail
 
@@ -96,6 +99,22 @@ jq -r '
     (.diff | rtrimstr("\n"))
 ' /tmp/otto-review/gitlab-mr-changes.json > /tmp/otto-review/diff.patch
 
+# An empty diff almost certainly means the MR coordinates are wrong; fail loud
+# rather than have Otto review nothing. This runs before scoping so an empty
+# *scoped* diff isn't mistaken for it.
+if [[ ! -s /tmp/otto-review/diff.patch ]]; then
+  fail "Diff for MR !$MR_IID is empty. Refusing to run Otto."
+fi
+
+# Narrow the diff to the configured review scope. When nothing is in scope there
+# is nothing to review: flag it so run-review.sh stops cleanly.
+rm -f /tmp/otto-review/scope-skip.txt
+if [[ "$(bash "$ACTION_PATH/core/apply-scope.sh")" == "skip" ]]; then
+  log "No files in this MR match review scope '${REVIEW_SCOPE:-entire-repo}'; skipping the review."
+  echo "true" > /tmp/otto-review/scope-skip.txt
+  exit 0
+fi
+
 # Cap the diff. A 50k-line diff is past the point where any reviewer can do a
 # careful pass; truncation is itself a signal the MR is too big to auto-review.
 total_lines=$(wc -l < /tmp/otto-review/diff.patch)
@@ -107,12 +126,6 @@ if [[ "$total_lines" -gt "$capped_lines" ]]; then
   echo "true" > /tmp/otto-review/diff-truncated.txt
 else
   echo "false" > /tmp/otto-review/diff-truncated.txt
-fi
-
-# An empty diff almost certainly means the MR coordinates are wrong; fail loud
-# rather than have Otto review nothing.
-if [[ "$total_lines" -eq 0 ]]; then
-  fail "Diff for MR !$MR_IID is empty. Refusing to run Otto."
 fi
 
 # ---------------------------------------------------------------------------

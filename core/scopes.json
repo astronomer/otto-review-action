@@ -1,0 +1,73 @@
+{
+  "entire-repo": {
+    "description": "Every file in the PR diff (default).",
+    "include": [
+      "**"
+    ],
+    "focus": ""
+  },
+  "airflow": {
+    "description": "Airflow / Astro project files only.",
+    "include": [
+      "**/dags/**",
+      "**/plugins/**",
+      "**/include/**",
+      "**/tests/**",
+      "**/.astro/**",
+      "**/requirements.txt",
+      "**/packages.txt",
+      "**/airflow_settings.yaml",
+      "**/.airflowignore",
+      "Dockerfile*"
+    ],
+    "focus": "Review as an Airflow and Astro specialist: DAG and task correctness, scheduling and idempotency, top-level code that slows DAG parsing, provider and operator usage, connections and secrets handling, and dependency or runtime-image compatibility."
+  },
+  "data-engineer": {
+    "description": "Everything a data engineer cares about: Airflow/Astro files, SQL, and dbt.",
+    "extends": "airflow",
+    "include": [
+      "*.sql",
+      "**/dbt/**",
+      "**/models/**",
+      "**/macros/**",
+      "**/seeds/**",
+      "**/snapshots/**",
+      "dbt_project.yml"
+    ],
+    "focus": "Review as a data engineer: in addition to Airflow and Astro correctness, check SQL for correctness, join fan-out, NULL handling, partition and incremental-load logic, idempotent re-runs, query cost and performance, and dbt model, test, and materialization choices. Treat schema changes as potentially breaking for downstream consumers."
+  },
+  "data-platform-engineer": {
+    "description": "Everything a data platform engineer cares about: Airflow/Astro files plus the infrastructure the data platform runs on (Terraform, Kubernetes/Helm, docker-compose).",
+    "extends": "airflow",
+    "include": [
+      "*.tf",
+      "*.tfvars",
+      "**/terraform/**",
+      "docker-compose*.yml",
+      "docker-compose*.yaml",
+      "**/helm/**",
+      "**/charts/**",
+      "**/k8s/**",
+      "**/kubernetes/**"
+    ],
+    "focus": "Review as a data platform engineer: in addition to Airflow and Astro correctness, check the infrastructure the data platform runs on: infrastructure-as-code safety (destructive or replace-forcing changes, state and drift risk), least-privilege IAM, network exposure and secrets handling for storage, warehouse, and cluster resources, Airflow deployment configuration, and resource limits, scaling, and upgrade or rollback behavior."
+  },
+  "devops-engineer": {
+    "description": "Everything a DevOps engineer cares about: CI/CD pipelines, containers, deployment manifests, and build scripts.",
+    "include": [
+      "**/.github/workflows/**",
+      ".gitlab-ci.yml",
+      "**/.gitlab/**",
+      "Dockerfile*",
+      "docker-compose*.yml",
+      "docker-compose*.yaml",
+      "**/helm/**",
+      "**/charts/**",
+      "**/k8s/**",
+      "**/kubernetes/**",
+      "Makefile",
+      "*.sh"
+    ],
+    "focus": "Review as a DevOps engineer: CI/CD pipeline correctness (triggers, permissions, caching, concurrency), supply-chain risk (unpinned actions or images, untrusted input in scripts), secrets exposure in pipelines and images, container image hygiene and pinning, shell script safety, and deployment, health-check, and rollback behavior."
+  }
+}

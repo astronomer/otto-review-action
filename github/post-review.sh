@@ -86,6 +86,18 @@ verdict=$(jq -r '.verdict // "comment"' <<<"$verdict_json")
 summary=$(jq -r '.summary // ""' <<<"$verdict_json")
 reasoning=$(jq -r '.reasoning // ""' <<<"$verdict_json")
 
+# Partial review (files outside the review scope were not reviewed): never
+# approve. The prompt tells Otto this too; this is the mechanical backstop.
+scope_note=""
+if [[ -s /tmp/otto-review/scope.json ]]; then
+  scope_note="$(jq -r '.note // ""' /tmp/otto-review/scope.json)"
+fi
+if [[ -n "$scope_note" && "$verdict" == "approve" ]]; then
+  echo "Partial review: downgrading verdict 'approve' to 'comment'."
+  verdict="comment"
+  verdict_json="$(jq '.verdict = "comment"' <<<"$verdict_json")"
+fi
+
 # Validate changed files. A zero-file diff means the SHA range is wrong; bail
 # rather than reconcile against nothing.
 mapfile -t changed_files < <(git diff --name-only "$BASE_SHA".."$HEAD_SHA")
@@ -110,6 +122,7 @@ verdict_json="$(python3 "$ACTION_PATH/core/filter-comments.py" \
   echo
   if [[ -n "$summary" ]]; then echo "$summary"; echo; fi
   if [[ -n "$reasoning" ]]; then echo "$reasoning"; echo; fi
+  if [[ -n "$scope_note" ]]; then echo "> $scope_note"; echo; fi
 } > /tmp/otto-review/summary-body.md
 
 jq -nc --rawfile body /tmp/otto-review/summary-body.md '{body: $body}' \

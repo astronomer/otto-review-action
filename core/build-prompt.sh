@@ -22,6 +22,19 @@ python3 "$ACTION_PATH/core/format-conversation.py" \
   /tmp/otto-review/pr-conversation.json \
   > /tmp/otto-review/pr-conversation.md
 
+# Review scope (see core/apply-scope.sh). The diff is already filtered to in-scope
+# files; tell Otto what the scope is and what was left out. Empty for the default
+# entire-repo scope with nothing excluded, so that prompt is unchanged.
+scope_json=/tmp/otto-review/scope.json
+scope_focus=""
+scope_note=""
+scope_excluded=""
+if [[ -s "$scope_json" ]]; then
+  scope_focus="$(jq -r '.focus // ""' "$scope_json")"
+  scope_note="$(jq -r '.note // ""' "$scope_json")"
+  scope_excluded="$(jq -r '(.excluded // [])[:50][] | "- " + .' "$scope_json")"
+fi
+
 # Sidecar context file. Otto's `read` tool will pull this in when it needs to
 # look at the diff, so the diff bytes never traverse argv.
 {
@@ -71,6 +84,17 @@ python3 "$ACTION_PATH/core/format-conversation.py" \
   echo
   echo "When there are no issues found, keep the reasoning paragraph short and end it with a single upbeat, enthusiastic remark cheering the author on and looking forward to their next contribution — vary the wording each time, in the spirit of \"Can't wait for the next one!\" or \"Another round soon, please!\". Only do this for the clean, no-issues case; when there are findings, keep your reasoning straightforward and professional."
   echo
+  if [[ -n "$scope_focus" ]]; then
+    echo "Review focus: $scope_focus"
+    echo
+  fi
+  if [[ -n "$scope_note" ]]; then
+    echo "$scope_note The diff in pr-context.md contains only the in-scope files. Only leave inline comments on in-scope files. You may read the out-of-scope files below for context, but do not review them. Because the review is partial, never return 'approve': use 'comment' when you find nothing blocking, and say in your reasoning that it was a partial review."
+    echo
+    echo "Out-of-scope files (first 50):"
+    echo "$scope_excluded"
+    echo
+  fi
   echo "Submit your final answer via the submit_final_answer tool using the schema you were given."
 } > /tmp/otto-review/user-prompt.txt
 

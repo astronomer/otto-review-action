@@ -54,6 +54,9 @@ export MAX_DIFF_LINES="${OTTO_MAX_DIFF_LINES:-50000}"
 export DRY_RUN="${OTTO_DRY_RUN:-false}"
 export INPUT_MODEL="${OTTO_MODEL:-}"
 export INPUT_ALLOWED_TOOLS="${OTTO_ALLOWED_TOOLS:-}"
+export REVIEW_SCOPE="${OTTO_REVIEW_SCOPE:-entire-repo}"
+export INCLUDE_PATHS="${OTTO_INCLUDE_PATHS:-}"
+export EXCLUDE_PATHS="${OTTO_EXCLUDE_PATHS:-}"
 export VERDICT_FILE="/tmp/otto-review/verdict-raw.txt"
 
 # Gateway attribution so review traffic bills as this action, not bare "otto".
@@ -97,6 +100,11 @@ log "Otto with the reviewer persona is available."
 # ---------------------------------------------------------------------------
 log "Gathering MR context..."
 bash "$ACTION_PATH/gitlab/gather-context.sh"
+
+if [[ -f /tmp/otto-review/scope-skip.txt ]]; then
+  log "Nothing in review scope '$REVIEW_SCOPE'; done."
+  exit 0
+fi
 
 log "Building prompt..."
 bash "$ACTION_PATH/core/build-prompt.sh"

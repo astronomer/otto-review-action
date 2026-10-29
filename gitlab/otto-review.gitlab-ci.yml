@@ -27,5 +27,7 @@ otto_review:
   variables:
     OTTO_MAX_DIFF_LINES: "50000"
     OTTO_DRY_RUN: "false"
+    # Which files to review: entire-repo | airflow | data-engineer | data-platform-engineer | devops-engineer
+    OTTO_REVIEW_SCOPE: "entire-repo"
   script:
     - bash /opt/otto-review/gitlab/run-review.sh

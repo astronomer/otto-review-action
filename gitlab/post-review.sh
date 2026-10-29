@@ -116,6 +116,8 @@ verdict_json="$(python3 "$ACTION_PATH/core/filter-comments.py" \
   echo
   [[ -n "$summary" ]] && { echo "$summary"; echo; }
   [[ -n "$reasoning" ]] && { echo "$reasoning"; echo; }
+  scope_note="$(jq -r '.note // ""' /tmp/otto-review/scope.json 2>/dev/null || true)"
+  [[ -n "$scope_note" ]] && { echo "> $scope_note"; echo; }
 } > /tmp/otto-review/summary-body.md
 jq -nc --rawfile body /tmp/otto-review/summary-body.md '{body: $body}' \
   > /tmp/otto-review/summary-payload.json

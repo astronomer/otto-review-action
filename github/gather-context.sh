@@ -7,6 +7,10 @@
 #   BASE_SHA          - base commit of the PR (for the local diff)
 #   HEAD_SHA          - head commit of the PR (for the local diff)
 #   MAX_DIFF_LINES    - cap on diff length passed to Otto
+#   ACTION_PATH       - this action's checkout (for core/apply-scope.sh)
+#   REVIEW_SCOPE / INCLUDE_PATHS / EXCLUDE_PATHS - optional review scope (see core/apply-scope.sh)
+#
+# Writes step output `skip=true` when no file in the diff is in scope.
 
 set -euo pipefail
 
@@ -14,6 +18,7 @@ set -euo pipefail
 : "${PR_NUMBER:?}"
 : "${BASE_SHA:?}"
 : "${HEAD_SHA:?}"
+: "${ACTION_PATH:?}"
 : "${MAX_DIFF_LINES:=50000}"
 
 mkdir -p /tmp/otto-review
@@ -79,6 +84,22 @@ if ! gh pr diff "$PR_NUMBER" > /tmp/otto-review/diff.patch 2>/tmp/otto-review/di
   git diff "$BASE_SHA".."$HEAD_SHA" > /tmp/otto-review/diff.patch
 fi
 
+# A PR with zero changed files almost certainly means the checkout / SHA range
+# is wrong. Fail loud rather than have Otto review an empty diff. This runs
+# before scoping so an empty *scoped* diff (below) isn't mistaken for it.
+if [[ ! -s /tmp/otto-review/diff.patch ]]; then
+  echo "::error::Diff between $BASE_SHA..$HEAD_SHA is empty. Refusing to run Otto."
+  exit 1
+fi
+
+# Narrow the diff to the configured review scope. When nothing is in scope there
+# is nothing to review: flag it so the remaining steps are skipped.
+if [[ "$(bash "$ACTION_PATH/core/apply-scope.sh")" == "skip" ]]; then
+  echo "::notice::No files in this PR match review scope '${REVIEW_SCOPE:-entire-repo}'; skipping the review."
+  [[ -n "${GITHUB_OUTPUT:-}" ]] && echo "skip=true" >> "$GITHUB_OUTPUT"
+  exit 0
+fi
+
 # Cap the diff. A 50k-line diff is already past the point where any reviewer —
 # human or otherwise — can do a careful pass; truncation is itself a strong
 # signal that the PR is too big for an automated review.
@@ -93,11 +114,4 @@ if [[ "$total_lines" -gt "$capped_lines" ]]; then
   echo "true" > /tmp/otto-review/diff-truncated.txt
 else
   echo "false" > /tmp/otto-review/diff-truncated.txt
-fi
-
-# A PR with zero changed files almost certainly means the checkout / SHA range
-# is wrong. Fail loud rather than have Otto review an empty diff.
-if [[ "$total_lines" -eq 0 ]]; then
-  echo "::error::Diff between $BASE_SHA..$HEAD_SHA is empty. Refusing to run Otto."
-  exit 1
 fi
