@@ -44,7 +44,7 @@ inputs:
   review-scope:
     required: false
     default: "entire-repo"
-    description: "Which files in the PR diff Otto reviews: 'entire-repo' (every changed file, the default), 'airflow' (Airflow/Astro project files), 'data-engineer' (Airflow/Astro plus SQL and dbt), or 'platform-engineer' (Terraform, Dockerfiles, CI/CD, Kubernetes/Helm). Out-of-scope files are left out of the diff and the review is marked partial (never approved). If no changed file is in scope, the review is skipped."
+    description: "Which files in the PR diff Otto reviews: 'entire-repo' (every changed file, the default), 'airflow' (Airflow/Astro project files), 'data-engineer' (Airflow/Astro plus SQL and dbt), 'data-platform-engineer' (Airflow/Astro plus Terraform, Kubernetes/Helm, docker-compose), or 'devops-engineer' (CI/CD pipelines, Dockerfiles, Kubernetes/Helm, build scripts). Out-of-scope files are left out of the diff and the review is marked partial (never approved). If no changed file is in scope, the review is skipped."
   include-paths:
     required: false
     default: ""

@@ -48,10 +48,15 @@ class FilterDiffTest(unittest.TestCase):
         self.assertIn("dags/a.py", info["included"])
         self.assertNotIn("README.md", info["included"])
 
-    def test_platform_engineer_matches_rename_by_either_path(self):
-        proc, info = run("platform-engineer")
-        self.assertEqual(info["included"], ["infra/main.tf"])
+    def test_data_platform_engineer_adds_terraform_and_matches_rename_by_either_path(self):
+        proc, info = run("data-platform-engineer")
+        self.assertEqual(info["included"], ["dags/a.py", "nested/proj/dags/b.py", "infra/main.tf"])
         self.assertIn("rename from old.tf", proc.stdout)
+
+    def test_devops_engineer_excludes_data_and_terraform(self):
+        proc, info = run("devops-engineer")
+        self.assertEqual(info["included"], [])
+        self.assertEqual(proc.stdout, "")
 
     def test_include_replaces_and_exclude_applies(self):
         _, info = run("entire-repo", include="**/*.py, *.sql", exclude="nested/**")
