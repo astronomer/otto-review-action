@@ -1,5 +1,6 @@
-# Keep the image lean: only core/ and gitlab/ are COPYed, but trim the build
-# context so unrelated changes don't bust the layer cache.
+# Keep the image lean: core/, gitlab/, github/, and ci/ are COPYed, but trim
+# the build context so unrelated changes don't bust the layer cache. `.github`
+# is the workflows dir (excluded); `github/` is the SCM adapter (kept).
 .git
 .github
 e2e

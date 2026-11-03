@@ -1,0 +1,61 @@
+name: CI Adapter Test
+
+# Guards the container-CI orchestrator (ci/run-review.sh, used by Drone and any
+# other container CI) and the image's ability to run it against GitHub. Additive
+# to gitlab-adapter-test.yaml (which validates the GitLab path). Both build the
+# same image; on a PR that touches shared paths (core/, Dockerfile, .dockerignore)
+# the two docker-build jobs run in parallel and each builds cold — the gha cache
+# only warms sequential runs. Kept separate for clear per-adapter ownership;
+# consolidate into one build if the duplicate cold build becomes a cost.
+#
+#   - lint:          bash syntax + shellcheck on ci/run-review.sh.
+#   - docker-build:  build the image and smoke-test that the ci/ path's
+#                    dependencies (gh) and files (ci/ + github/ + core/) are
+#                    all baked in.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ci/**'
+      - 'github/**'
+      - 'core/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/ci-adapter-test.yaml'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Syntax check
+        run: bash -n ci/run-review.sh
+      - name: shellcheck
+        run: shellcheck -S warning ci/run-review.sh
+
+  docker-build:
+    # Build the image (single-arch, no push) and smoke-test that the container-CI
+    # GitHub path can actually run from it: gh present, and the ci/ + github/ +
+    # core/ scripts all baked. The release workflow does the multi-arch build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: otto-review:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the image
+        run: |
+          docker run --rm otto-review:ci bash -lc '
+            command -v astro && astro version \
+              && command -v gh && gh --version \
+              && test -f /opt/otto-review/ci/run-review.sh \
+              && test -f /opt/otto-review/github/gather-context.sh \
+              && test -f /opt/otto-review/github/post-review.sh \
+              && test -f /opt/otto-review/core/run-otto.sh'

@@ -1,0 +1,47 @@
+# Otto Review for Drone CI (GitHub)
+#
+# Runs Astronomer's Otto reviewer over a GitHub pull request from Drone CI and
+# posts a sticky summary comment plus inline review comments — the same output
+# as the GitHub Action, driven from a container-native runner instead of the
+# GitHub Actions runtime.
+#
+# How to use:
+#   1. Copy this pipeline into your repo's `.drone.yml` (or merge the `steps:`
+#      entry into an existing pipeline).
+#   2. Add these Drone secrets (`drone secret add ...` or the repo UI):
+#        astro_api_token     - Astronomer API token (gateway auth)
+#        astro_organization  - Astronomer organization id
+#        github_token        - a GitHub PAT / App token with pull-requests:write.
+#                              Drone mints no token of its own, so this must be a
+#                              real token; it also resolves review threads, so no
+#                              separate resolve-token is needed.
+#   3. Pin the image tag to a release (`:v0` tracks the latest v0.x; mirrors
+#      GitHub's `uses: ...@v0`). Use `:vX.Y.Z` to pin exactly.
+#
+# The image (public, on GHCR) bakes the Astro CLI, the GitHub CLI, and the
+# review scripts, so the step needs no per-run install. Otto stays gateway-gated,
+# so a public image grants no free usage.
+
+kind: pipeline
+type: docker
+name: otto-review
+
+trigger:
+  event:
+    - pull_request
+
+steps:
+  - name: otto-review
+    image: ghcr.io/astronomer/otto-review:v0
+    environment:
+      OTTO_SCM: github
+      OTTO_MAX_DIFF_LINES: "50000"
+      OTTO_DRY_RUN: "false"
+      ASTRO_API_TOKEN:
+        from_secret: astro_api_token
+      ASTRO_ORGANIZATION:
+        from_secret: astro_organization
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - bash /opt/otto-review/ci/run-review.sh
