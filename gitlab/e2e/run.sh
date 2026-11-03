@@ -15,7 +15,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export E2E_FIXTURES="$HERE/fixtures"
 source "$HERE/lib.sh"
 
+export GUIDANCE_FILE="./.gitlab/otto-review.md"
 run_adapter
+
+# --- review guidance is read at the BASE commit and staged for --append-system-prompt ---
+check "guidance fetched from repository files API at ref=BASE111" \
+  grep -q '^=== GET .*/repository/files/%2Egitlab%2Fotto-review%2Emd/raw?ref=BASE111$' "$STUB_LOG"
+check "guidance.md carries the fixture body" \
+  grep -q 'Every DAG must set an `owner`' /tmp/otto-review/guidance.md
+check "guidance.md is framed under the guidance heading" \
+  grep -q '^## Repository review guidance' /tmp/otto-review/guidance.md
 
 # --- conversation normalization renders correctly via the neutral formatter ---
 conv_render="$(python3 "$ACTION_PATH/core/format-conversation.py" /tmp/otto-review/pr-conversation.json)"

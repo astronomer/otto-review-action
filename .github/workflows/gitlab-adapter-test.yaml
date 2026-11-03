@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Test review-guidance loading
+        run: bash core/tests/load-guidance-test.sh
       - name: Run offline GitLab e2e
         run: bash gitlab/e2e/run.sh
       - name: Run offline GitLab e2e (inline-position edge cases)

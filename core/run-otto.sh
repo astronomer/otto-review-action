@@ -42,6 +42,12 @@ fi
 if [[ -n "${INPUT_ALLOWED_TOOLS:-}" ]]; then
   otto_args+=(--allowed-tools "$INPUT_ALLOWED_TOOLS")
 fi
+# Repository review guidance (core/load-guidance.sh, read from the base commit).
+# Otto appends the file after the persona's system prompt.
+guidance_file=/tmp/otto-review/guidance.md
+if [[ -s "$guidance_file" ]]; then
+  otto_args+=(--append-system-prompt "$guidance_file")
+fi
 
 # The argv-side prompt is short by construction (build-prompt.sh keeps the
 # diff in a sidecar file Otto reads through its `read` tool), so passing it as

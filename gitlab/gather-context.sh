@@ -22,6 +22,7 @@
 #   MR_IID         - merge request iid (CI_MERGE_REQUEST_IID)
 #   ACTION_PATH    - repo root (to invoke gitlab/normalize-conversation.py)
 #   MAX_DIFF_LINES - cap on diff length passed to Otto (default 50000)
+#   GUIDANCE_FILE  - optional repo-relative review-guidance markdown (see core/load-guidance.sh)
 
 set -euo pipefail
 
@@ -147,5 +148,27 @@ python3 "$ACTION_PATH/gitlab/normalize-conversation.py" \
   --discussions /tmp/otto-review/gitlab-discussions.json \
   --total "$disc_total" \
   > /tmp/otto-review/pr-conversation.json
+
+# ---------------------------------------------------------------------------
+# 4. Optional repository review guidance, read at the MR's BASE commit through
+#    the repository files API (the job needn't have a usable clone). A PR must
+#    not be able to edit its own reviewer's instructions; see
+#    core/load-guidance.sh, which does the formatting.
+# ---------------------------------------------------------------------------
+if [[ -n "${GUIDANCE_FILE:-}" ]]; then
+  base_sha="$(jq -r '.base_sha // empty' /tmp/otto-review/gitlab-diff-refs.json)"
+  guidance_path="${GUIDANCE_FILE#./}"
+  guidance_path="${guidance_path#/}"
+  raw=/tmp/otto-review/guidance-raw.md
+  rm -f "$raw"
+  if [[ -z "$base_sha" ]]; then
+    warn "MR has no base_sha in diff_refs; review guidance not loaded."
+  else
+    # A 404 (file not on base yet) leaves no raw file; load-guidance.sh warns.
+    gl_get "$CI_API_V4_URL/projects/$PROJECT_ID/repository/files/$(jq -rn --arg p "$guidance_path" '$p | @uri | gsub("\\."; "%2E")')/raw?ref=$base_sha" \
+      > "$raw" || rm -f "$raw"
+    GUIDANCE_RAW="$raw" bash "$ACTION_PATH/core/load-guidance.sh"
+  fi
+fi
 
 log "Wrote pr-meta.json, gitlab-diff-refs.json, diff.capped.patch, pr-conversation.json"
