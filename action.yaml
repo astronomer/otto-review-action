@@ -267,8 +267,10 @@ runs:
 
     - name: Load review guidance
       # Read from the base commit, not the PR head, so a PR can't rewrite its
-      # own reviewer's instructions. See core/load-guidance.sh.
-      if: inputs.review-guidance-file != ''
+      # own reviewer's instructions. See core/load-guidance.sh. Runs even with
+      # no input: then it only clears a stale guidance.md that a previous job
+      # left on a persistent (self-hosted) runner, which run-otto.sh would
+      # otherwise append.
       shell: bash
       env:
         GUIDANCE_FILE: ${{ inputs.review-guidance-file }}

@@ -47,8 +47,9 @@ check "whitespace-only file: no guidance" test ! -e "$OUT"
 load .github/otto-review.md "0000000000000000000000000000000000000000"
 check "unknown base commit: no guidance, no failure" test ! -e "$OUT"
 
-load "" "$base_sha"
-check "no file configured: no guidance" test ! -e "$OUT"
+load .github/otto-review.md "$base_sha"
+load "" ""
+check "no file configured: clears a stale guidance.md from a previous run" test ! -e "$OUT"
 
 if [[ "$fails" -gt 0 ]]; then echo "$fails check(s) failed"; exit 1; fi
 echo "all checks passed"

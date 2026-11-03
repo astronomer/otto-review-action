@@ -52,9 +52,15 @@ if [[ -n "${GUIDANCE_RAW+set}" ]]; then
 else
   : "${GUIDANCE_REF:?GUIDANCE_REF (the base commit) is required to load review guidance}"
   # Shallow clones may not have the base commit. Try to fetch just that commit
-  # before giving up.
+  # before giving up. --depth=1 only when the clone is already shallow: on a
+  # full clone it would write .git/shallow and cut the history later steps
+  # (base..head diffs) rely on.
   if ! git cat-file -e "${GUIDANCE_REF}^{commit}" 2>/dev/null; then
-    git fetch --quiet --depth=1 origin "$GUIDANCE_REF" 2>/dev/null || true
+    if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == true ]]; then
+      git fetch --quiet --no-tags --depth=1 origin "$GUIDANCE_REF" 2>/dev/null || true
+    else
+      git fetch --quiet --no-tags origin "$GUIDANCE_REF" 2>/dev/null || true
+    fi
   fi
   if ! git cat-file -e "${GUIDANCE_REF}^{commit}" 2>/dev/null; then
     warn "Review guidance '$path' not loaded: base commit $GUIDANCE_REF is not available in this checkout."
