@@ -63,7 +63,8 @@ Add these masked **CI/CD variables** (Settings → CI/CD → Variables):
 
 Optional variables: `ASTRO_DOMAIN` (default `astronomer.io`), `ASTRO_CLI_VERSION`,
 `OTTO_MODEL`, `OTTO_ALLOWED_TOOLS`, `OTTO_MAX_DIFF_LINES` (default `50000`),
-`OTTO_DRY_RUN` (`true` posts only the sticky summary).
+`OTTO_DRY_RUN` (`true` posts only the sticky summary), `OTTO_REVIEW_GUIDANCE_FILE`
+(see [Review guidance](#review-guidance)).
 
 **Differences from the GitHub action:** the GitLab adapter is *sticky-note-only*
 — it posts a sticky summary note plus inline notes and resolves addressed
@@ -84,10 +85,34 @@ usage.
 | `model` | `""` (persona's default tier) | Model identifier passed to Otto via `--model`. Empty uses the model the reviewer persona's tier maps to. |
 | `max-diff-lines` | `50000` | Diffs longer than this are truncated. Truncation is itself a signal not to auto-approve. |
 | `allowed-tools` | `""` (persona's allowlist) | Comma-separated tool allowlist passed to Otto. Empty uses the reviewer persona's built-in allowlist (`read, grep, find, ls, bash`). Set this to override with a different list. |
+| `review-guidance-file` | `""` | Repo-relative path to a markdown file of your own review guidance, appended to the reviewer persona's system prompt. Read from the PR's base commit. See [Review guidance](#review-guidance). |
 | `dry-run` | `false` | When `true`, no merge-gating review is posted regardless of Otto's verdict. The sticky summary comment and inline comments are still posted. |
 | `pr-number` | `""` | PR number to review. Only consulted for events that don't carry a PR payload (`issue_comment`, `workflow_dispatch`, `repository_dispatch`). For `pull_request` / `pull_request_target` events the PR is read from the event payload and this input is ignored. |
 | `astro-domain` | `astronomer.io` | Astronomer domain. Override for non-prod environments (e.g. `astronomer-dev.io`). Only useful for internal testing. |
 
+
+## Review guidance
+
+The reviewer persona is tuned for Astro/Airflow projects. To steer it for your repo, such as what to focus on, conventions to enforce, what to ignore, or how strict to be, commit a markdown file and point `review-guidance-file` at it:
+
+```yaml
+- uses: astronomer/otto-review-action@v0
+  with:
+    review-guidance-file: .github/otto-review.md
+```
+
+```markdown
+<!-- .github/otto-review.md -->
+- This repo also holds dbt models under `transform/`. Review SQL for join fan-out and incremental-load correctness.
+- Every DAG must set `owner` in `default_args`; flag missing owners as medium.
+- Don't comment on formatting or import order; ruff enforces it.
+```
+
+The file is appended to the persona's system prompt through Otto's `--append-system-prompt`, after the built-in review protocol. It can change focus and conventions. It can't change the read-only tool set, the untrusted-input handling, or the verdict schema.
+
+**The file is read from the PR's base commit, not the PR head.** The guidance goes into the system prompt, so letting a PR edit it would let the PR rewrite its own reviewer's instructions. A PR that adds or changes the file is reviewed under the previous version (or none), and the change takes effect after it merges. If the file is missing on the base commit, the action warns and reviews without it.
+
+On GitLab, set `OTTO_REVIEW_GUIDANCE_FILE` instead. It's fetched at the MR's base commit through the repository files API, so the job doesn't need a clone.
 
 ## Outputs
 

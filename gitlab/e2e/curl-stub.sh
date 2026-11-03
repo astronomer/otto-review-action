@@ -50,6 +50,17 @@ else
     *"/discussions"*)
       cat "$E2E_FIXTURES/discussions.json" > "$outfile"
       [[ -n "$hdrfile" ]] && echo "X-Total: $(jq 'length' "$E2E_FIXTURES/discussions.json")" > "$hdrfile" ;;
+    *"/repository/files/"*)
+      # Review guidance at the base commit. No fixture = the file isn't on base.
+      # Logged so the harness can assert which ref was read.
+      echo "=== GET $url" >> "$STUB_LOG"
+      if [[ -f "$E2E_FIXTURES/guidance.md" ]]; then
+        cat "$E2E_FIXTURES/guidance.md" > "$outfile"
+      else
+        echo '{"message":"404 File Not Found"}' > "$outfile"
+        [[ "$want_code" == 1 ]] && echo 404
+        exit 0
+      fi ;;
     *"/notes"*)
       # No pre-existing sticky summary note.
       echo '[]' > "$outfile" ;;

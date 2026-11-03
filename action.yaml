@@ -41,6 +41,10 @@ inputs:
     required: false
     default: ""
     description: "Comma-separated list of Otto tools the reviewer may call. Empty (default) uses the reviewer persona's built-in allowlist (read, grep, find, ls, bash). Set this to override with a different list."
+  review-guidance-file:
+    required: false
+    default: ""
+    description: "Optional repo-relative path to a markdown file of your own review guidance (focus areas, conventions, what to ignore), e.g. '.github/otto-review.md'. It is appended to the reviewer persona's system prompt. The file is read from the PR's base commit, not the PR head, so a PR that changes it is reviewed under the previous version."
   dry-run:
     required: false
     default: "false"
@@ -260,6 +264,18 @@ runs:
         HEAD_SHA: ${{ steps.resolve.outputs.head-sha }}
         MAX_DIFF_LINES: ${{ inputs.max-diff-lines }}
       run: bash "$GITHUB_ACTION_PATH/github/gather-context.sh"
+
+    - name: Load review guidance
+      # Read from the base commit, not the PR head, so a PR can't rewrite its
+      # own reviewer's instructions. See core/load-guidance.sh. Runs even with
+      # no input: then it only clears a stale guidance.md that a previous job
+      # left on a persistent (self-hosted) runner, which run-otto.sh would
+      # otherwise append.
+      shell: bash
+      env:
+        GUIDANCE_FILE: ${{ inputs.review-guidance-file }}
+        GUIDANCE_REF: ${{ steps.resolve.outputs.base-sha }}
+      run: bash "$GITHUB_ACTION_PATH/core/load-guidance.sh"
 
     - name: Build prompt
       id: prompt

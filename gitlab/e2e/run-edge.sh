@@ -29,7 +29,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export E2E_FIXTURES="$HERE/fixtures-edge"
 source "$HERE/lib.sh"
 
+# No guidance.md fixture here, so the files API 404s: the review must proceed
+# without guidance rather than fail.
+export GUIDANCE_FILE=".gitlab/otto-review.md"
 run_adapter
+
+check "guidance missing on base: no guidance.md, review still ran" \
+  test ! -e /tmp/otto-review/guidance.md
 
 # All POST .../discussions payloads (single-line JSON on the line after the
 # marker). while-read (not mapfile) so the harness runs on bash 3.2 too.

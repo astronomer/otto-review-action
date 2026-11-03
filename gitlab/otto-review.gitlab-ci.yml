@@ -27,5 +27,8 @@ otto_review:
   variables:
     OTTO_MAX_DIFF_LINES: "50000"
     OTTO_DRY_RUN: "false"
+    # Optional: your own review guidance, appended to the reviewer's system
+    # prompt. Read from the MR's target-branch (base) commit, not the MR head.
+    # OTTO_REVIEW_GUIDANCE_FILE: ".gitlab/otto-review.md"
   script:
     - bash /opt/otto-review/gitlab/run-review.sh

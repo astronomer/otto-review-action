@@ -18,6 +18,8 @@
 #   OTTO_ALLOWED_TOOLS  - optional --allowed-tools override
 #   OTTO_MAX_DIFF_LINES - diff cap (default 50000)
 #   OTTO_DRY_RUN        - "true" => sticky summary only, no inline notes
+#   OTTO_REVIEW_GUIDANCE_FILE - optional repo-relative markdown appended to the
+#                         reviewer's system prompt (read from the MR base commit)
 #   OTTO_REVIEW_VERSION - image version, for gateway attribution (baked into the image)
 #
 # Plus GitLab predefined: CI_API_V4_URL, CI_MERGE_REQUEST_PROJECT_ID,
@@ -52,6 +54,7 @@ export PROJECT_ID="$CI_MERGE_REQUEST_PROJECT_ID"
 export MR_IID="$CI_MERGE_REQUEST_IID"
 export MAX_DIFF_LINES="${OTTO_MAX_DIFF_LINES:-50000}"
 export DRY_RUN="${OTTO_DRY_RUN:-false}"
+export GUIDANCE_FILE="${OTTO_REVIEW_GUIDANCE_FILE:-}"
 export INPUT_MODEL="${OTTO_MODEL:-}"
 export INPUT_ALLOWED_TOOLS="${OTTO_ALLOWED_TOOLS:-}"
 export VERDICT_FILE="/tmp/otto-review/verdict-raw.txt"
